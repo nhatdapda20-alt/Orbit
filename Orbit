@@ -3,12 +3,12 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 local settings = {
-	active = false,
-	target = nil,
-	radius = 10000,
-	speed = 10000,
-	jitterAmount = 80,
-	headStomp = false  -- Chế độ đạp đầu
+    active = false,
+    target = nil,
+    radius = 10000,
+    speed = 10000,
+    jitterAmount = 80,
+    headStomp = false
 }
 
 local orbitConn = nil
@@ -16,7 +16,8 @@ local headStompConn = nil
 local lastTeleport = 0
 local Gui, MainFrame, StatusLabel, TargetLabel, ToggleButton, HeadStompButton
 
-if player.PlayerGui:FindFirstChild("OrbitByNhat") then    player.PlayerGui.OrbitByNhat:Destroy()
+if player.PlayerGui:FindFirstChild("OrbitByNhat") then
+    player.PlayerGui.OrbitByNhat:Destroy()
 end
 
 Gui = Instance.new("ScreenGui")
@@ -102,7 +103,6 @@ ToggleStroke.Thickness = 2
 ToggleStroke.Color = Color3.fromRGB(0, 255, 0)
 ToggleStroke.Parent = ToggleButton
 
--- Nút HEAD STOMP (Bay trên đầu địch)
 HeadStompButton = Instance.new("TextButton")
 HeadStompButton.Size = UDim2.new(1, -20, 0, 35)
 HeadStompButton.Position = UDim2.new(0, 10, 0, 155)
@@ -125,212 +125,262 @@ HeadStompStroke.Parent = HeadStompButton
 
 -- === TÌM MỤC TIÊU ===
 local function findTarget()
-	local nearest = nil
-	local minDist = math.huge
-	local myChar = player.Character
-	if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
-	local myPos = myChar.HumanoidRootPart.Position
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-			local hum = p.Character:FindFirstChild("Humanoid")
-			if hum and hum.Health > 0 then
-				local dist = (myPos - p.Character.HumanoidRootPart.Position).Magnitude
-				if dist < minDist then
-					minDist = dist
-					nearest = p
-				end
-			end
-		end
-	end
-	return nearest
+    local nearest = nil
+    local minDist = math.huge
+    local myChar = player.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = myChar.HumanoidRootPart.Position
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = p.Character:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                local dist = (myPos - p.Character.HumanoidRootPart.Position).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    nearest = p
+                end
+            end
+        end
+    end
+    return nearest
 end
 
--- === ORBIT (Bay vòng quanh) ===
+-- === TÌM VỊ TRÍ ĐẦU (FIX CHO RIVALS) ===
+local function getHeadPosition(targetChar)
+    -- Thử tìm Head trước
+    local head = targetChar:FindFirstChild("Head")
+    if head then
+        return head.Position
+    end
+    
+    -- Nếu không có Head, thử tìm phần cao nhất của character
+    local highestY = -math.huge
+    local highestPos = nil
+    
+    for _, part in ipairs(targetChar:GetChildren()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            local topY = part.Position.Y + (part.Size.Y / 2)
+            if topY > highestY then
+                highestY = topY
+                highestPos = part.Position + Vector3.new(0, part.Size.Y / 2, 0)
+            end
+        end
+    end
+    
+    -- Nếu tìm thấy phần cao nhất
+    if highestPos then
+        return highestPos
+    end
+    
+    -- Fallback: dùng HumanoidRootPart + offset
+    local root = targetChar:FindFirstChild("HumanoidRootPart")
+    if root then
+        return root.Position + Vector3.new(0, 5, 0)
+    end
+    
+    return nil
+end
+
+-- === ORBIT ===
 local function startOrbit()
-	if settings.active then return end
-	if settings.headStomp then stopHeadStomp() end
-	local target = findTarget()
-	if not target then
-		TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
-		return
-	end
-	settings.active = true
-	settings.target = target
-	StatusLabel.Text = "🟢 ORBIT ACTIVE"
-	StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-	TargetLabel.Text = "🎯 TARGET: " .. target.Name
-	ToggleButton.Text = "STOP ORBIT"
-	ToggleButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-	ToggleStroke.Color = Color3.fromRGB(255, 0, 0)
-	workspace.Gravity = 0
-	local angleBase = 0
-	local jitterPhase = 0
-	if orbitConn then orbitConn:Disconnect() end
-	orbitConn = RunService.Heartbeat:Connect(function()
-		if not settings.active then orbitConn:Disconnect() return end
-		if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
-			settings.target = findTarget()
-			if not settings.target then stopOrbit() return end
-			TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
-		end
-		local targetRoot = settings.target.Character.HumanoidRootPart
-		local myChar = player.Character
-		if not myChar then return end
-		local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-		if not myRoot then return end
-		local now = tick()
-		local interval = 1 / settings.speed
-		if now - lastTeleport < interval then return end
-		lastTeleport = now
-		angleBase = (angleBase + 0.5) % (math.pi * 2)
-		jitterPhase = jitterPhase + 0.7
-		local r = settings.radius
-		local targetPos = targetRoot.Position
-		local baseX = math.sin(angleBase) * r
-		local baseZ = math.cos(angleBase) * r
-		local jitterX = math.sin(jitterPhase * 5) * (r * 0.5) + math.random(-settings.jitterAmount, settings.jitterAmount)
-		local jitterY = math.cos(jitterPhase * 3) * (r * 0.6) + math.random(-settings.jitterAmount, settings.jitterAmount) + 30
-		local jitterZ = math.sin(jitterPhase * 4) * (r * 0.4) + math.random(-settings.jitterAmount, settings.jitterAmount)
-		local desiredPos = Vector3.new(
-			targetPos.X + baseX + jitterX,
-			targetPos.Y + jitterY,
-			targetPos.Z + baseZ + jitterZ
-		)
-		myRoot.CFrame = CFrame.new(desiredPos)
-		myRoot.CFrame = myRoot.CFrame * CFrame.Angles(
-			math.rad(math.random(-60, 60)),
-			math.rad(math.random(0, 360)),
-			math.rad(math.random(-60, 60))
-		)
-		myRoot.Velocity = Vector3.zero
-		myRoot.RotVelocity = Vector3.zero
-		local hum = myChar:FindFirstChild("Humanoid")
-		if hum then
-			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-		end
-	end)
+    if settings.active then return end
+    if settings.headStomp then stopHeadStomp() end
+    local target = findTarget()
+    if not target then
+        TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
+        return
+    end
+    settings.active = true
+    settings.target = target
+    StatusLabel.Text = "🟢 ORBIT ACTIVE"
+    StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    TargetLabel.Text = "🎯 TARGET: " .. target.Name
+    ToggleButton.Text = "STOP ORBIT"
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    ToggleStroke.Color = Color3.fromRGB(255, 0, 0)
+    workspace.Gravity = 0
+    local angleBase = 0
+    local jitterPhase = 0
+    if orbitConn then orbitConn:Disconnect() end
+    orbitConn = RunService.Heartbeat:Connect(function()
+        if not settings.active then orbitConn:Disconnect() return end
+        if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
+            settings.target = findTarget()
+            if not settings.target then stopOrbit() return end
+            TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
+        end
+        local targetRoot = settings.target.Character.HumanoidRootPart
+        local myChar = player.Character
+        if not myChar then return end
+        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return end
+        local now = tick()
+        local interval = 1 / settings.speed
+        if now - lastTeleport < interval then return end
+        lastTeleport = now
+        angleBase = (angleBase + 0.5) % (math.pi * 2)
+        jitterPhase = jitterPhase + 0.7
+        local r = settings.radius
+        local targetPos = targetRoot.Position
+        local baseX = math.sin(angleBase) * r
+        local baseZ = math.cos(angleBase) * r
+        local jitterX = math.sin(jitterPhase * 5) * (r * 0.5) + math.random(-settings.jitterAmount, settings.jitterAmount)
+        local jitterY = math.cos(jitterPhase * 3) * (r * 0.6) + math.random(-settings.jitterAmount, settings.jitterAmount) + 30
+        local jitterZ = math.sin(jitterPhase * 4) * (r * 0.4) + math.random(-settings.jitterAmount, settings.jitterAmount)
+        local desiredPos = Vector3.new(
+            targetPos.X + baseX + jitterX,
+            targetPos.Y + jitterY,
+            targetPos.Z + baseZ + jitterZ
+        )
+        myRoot.CFrame = CFrame.new(desiredPos)
+        myRoot.CFrame = myRoot.CFrame * CFrame.Angles(
+            math.rad(math.random(-60, 60)),
+            math.rad(math.random(0, 360)),
+            math.rad(math.random(-60, 60))
+        )
+        myRoot.Velocity = Vector3.zero
+        myRoot.RotVelocity = Vector3.zero
+        local hum = myChar:FindFirstChild("Humanoid")
+        if hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        end
+    end)
 end
 
 local function stopOrbit()
-	settings.active = false
-	if orbitConn then orbitConn:Disconnect() orbitConn = nil end
-	workspace.Gravity = 196.2
-	local char = player.Character
-	if char then
-		local hum = char:FindFirstChild("Humanoid")
-		if hum then
-			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-		end
-	end
-	StatusLabel.Text = "🔴 INACTIVE"
-	StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-	TargetLabel.Text = "🎯 TARGET: NONE"
-	ToggleButton.Text = "START ORBIT"
-	ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
-	ToggleStroke.Color = Color3.fromRGB(0, 255, 0)
+    settings.active = false
+    if orbitConn then orbitConn:Disconnect() orbitConn = nil end
+    workspace.Gravity = 196.2
+    local char = player.Character
+    if char then
+        local hum = char:FindFirstChild("Humanoid")
+        if hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+        end
+    end
+    StatusLabel.Text = "🔴 INACTIVE"
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    TargetLabel.Text = "🎯 TARGET: NONE"
+    ToggleButton.Text = "START ORBIT"
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+    ToggleStroke.Color = Color3.fromRGB(0, 255, 0)
 end
 
--- === HEAD STOMP (Bay trên đầu địch) ===
+-- === HEAD STOMP FIX CHO RIVALS ===
 local function startHeadStomp()
-	if settings.headStomp then return end
-	if settings.active then stopOrbit() end
-	local target = findTarget()
-	if not target then
-		TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
-		return
-	end
-	settings.headStomp = true
-	settings.target = target
-	StatusLabel.Text = "🟣 HEAD STOMP ACTIVE"
-	StatusLabel.TextColor3 = Color3.fromRGB(255, 150, 0)
-	TargetLabel.Text = "🎯 TARGET: " .. target.Name
-	HeadStompButton.Text = "👣 STOP STOMP"
-	HeadStompButton.BackgroundColor3 = Color3.fromRGB(150, 50, 0)
-	HeadStompStroke.Color = Color3.fromRGB(255, 0, 0)
-	workspace.Gravity = 0
-
-	if headStompConn then headStompConn:Disconnect() end
-	headStompConn = RunService.Heartbeat:Connect(function()
-		if not settings.headStomp then headStompConn:Disconnect() return end
-		if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
-			settings.target = findTarget()
-			if not settings.target then stopHeadStomp() return end
-			TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
-		end
-		local targetRoot = settings.target.Character.HumanoidRootPart
-		local targetHead = settings.target.Character:FindFirstChild("Head")
-		local myChar = player.Character
-		if not myChar then return end
-		local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-		if not myRoot then return end
-
-		-- Vị trí ngay trên đầu mục tiêu
-		local headPos = targetHead and targetHead.Position or targetRoot.Position + Vector3.new(0, 3, 0)
-		local stompPos = headPos + Vector3.new(0, 3, 0)  -- Đứng ngay trên đầu
-
-		myRoot.CFrame = CFrame.new(stompPos)
-		myRoot.Velocity = Vector3.zero
-		myRoot.RotVelocity = Vector3.zero
-
-		local hum = myChar:FindFirstChild("Humanoid")
-		if hum then
-			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-		end
-	end)
+    if settings.headStomp then return end
+    if settings.active then stopOrbit() end
+    local target = findTarget()
+    if not target then
+        TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
+        return
+    end
+    settings.headStomp = true
+    settings.target = target
+    StatusLabel.Text = "🟣 HEAD STOMP ACTIVE"
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 150, 0)
+    TargetLabel.Text = "🎯 TARGET: " .. target.Name
+    HeadStompButton.Text = "👣 STOP STOMP"
+    HeadStompButton.BackgroundColor3 = Color3.fromRGB(150, 50, 0)
+    HeadStompStroke.Color = Color3.fromRGB(255, 0, 0)
+    workspace.Gravity = 0
+    
+    -- Teleport ngay lập tức lên đầu địch
+    local myChar = player.Character
+    if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+        local myRoot = myChar.HumanoidRootPart
+        local targetChar = target.Character
+        if targetChar then
+            local headPos = getHeadPosition(targetChar)
+            if headPos then
+                myRoot.CFrame = CFrame.new(headPos + Vector3.new(0, 3, 0))
+                myRoot.Velocity = Vector3.zero
+            end
+        end
+    end
+    
+    if headStompConn then headStompConn:Disconnect() end
+    
+    headStompConn = RunService.Heartbeat:Connect(function()
+        if not settings.headStomp then headStompConn:Disconnect() return end
+        if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
+            settings.target = findTarget()
+            if not settings.target then stopHeadStomp() return end
+            TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
+        end
+        local targetChar = settings.target.Character
+        local myChar = player.Character
+        if not myChar then return end
+        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return end
+        
+        -- Dùng hàm getHeadPosition đã fix
+        local headPos = getHeadPosition(targetChar)
+        if headPos then
+            myRoot.CFrame = CFrame.new(headPos + Vector3.new(0, 3, 0))
+            myRoot.Velocity = Vector3.zero
+            myRoot.RotVelocity = Vector3.zero
+        end
+        
+        local hum = myChar:FindFirstChild("Humanoid")
+        if hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        end
+    end)
 end
 
 local function stopHeadStomp()
-	settings.headStomp = false
-	if headStompConn then headStompConn:Disconnect() headStompConn = nil end
-	workspace.Gravity = 196.2
-	local char = player.Character
-	if char then
-		local hum = char:FindFirstChild("Humanoid")
-		if hum then
-			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-		end
-	end
-	StatusLabel.Text = "🔴 INACTIVE"
-	StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-	TargetLabel.Text = "🎯 TARGET: NONE"
-	HeadStompButton.Text = "👣 HEAD STOMP"
-	HeadStompButton.BackgroundColor3 = Color3.fromRGB(100, 50, 0)
-	HeadStompStroke.Color = Color3.fromRGB(255, 150, 0)
+    settings.headStomp = false
+    if headStompConn then headStompConn:Disconnect() headStompConn = nil end
+    workspace.Gravity = 196.2
+    local char = player.Character
+    if char then
+        local hum = char:FindFirstChild("Humanoid")
+        if hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+        end
+    end
+    StatusLabel.Text = "🔴 INACTIVE"
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    TargetLabel.Text = "🎯 TARGET: NONE"
+    HeadStompButton.Text = "👣 HEAD STOMP"
+    HeadStompButton.BackgroundColor3 = Color3.fromRGB(100, 50, 0)
+    HeadStompStroke.Color = Color3.fromRGB(255, 150, 0)
 end
 
 -- === KẾT NỐI NÚT ===
 ToggleButton.MouseButton1Click:Connect(function()
-	if settings.active then 
-		stopOrbit() 
-	else 
-		if settings.headStomp then stopHeadStomp() end
-		startOrbit() 
-	end
+    if settings.active then 
+        stopOrbit() 
+    else 
+        if settings.headStomp then stopHeadStomp() end
+        startOrbit() 
+    end
 end)
 
 HeadStompButton.MouseButton1Click:Connect(function()
-	if settings.headStomp then
-		stopHeadStomp()
-	else
-		if settings.active then stopOrbit() end
-		startHeadStomp()
-	end
+    if settings.headStomp then
+        stopHeadStomp()
+    else
+        if settings.active then stopOrbit() end
+        startHeadStomp()
+    end
 end)
 
 player.CharacterAdded:Connect(function()
-	if settings.active then
-		stopOrbit()
-		task.wait(0.5)
-		startOrbit()
-	elseif settings.headStomp then
-		stopHeadStomp()
-		task.wait(0.5)
-		startHeadStomp()
-	end
+    if settings.active then
+        stopOrbit()
+        task.wait(0.5)
+        startOrbit()
+    elseif settings.headStomp then
+        stopHeadStomp()
+        task.wait(0.5)
+        startHeadStomp()
+    end
 end)
 
-print("✅ ORBIT BY NHẬT loaded!")
+print("✅ ORBIT BY NHẬT!")
