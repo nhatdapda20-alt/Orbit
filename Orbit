@@ -1,56 +1,47 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
--- Cài đặt
 local settings = {
-    active = false,
-    target = nil,
-    radius = 10000,    -- set mặc định 10000
-    speed = 10000,     -- set mặc định 10000
-    jitterAmount = 80
+	active = false,
+	target = nil,
+	radius = 10000,
+	speed = 10000,
+	jitterAmount = 80,
+	headStomp = false  -- Chế độ đạp đầu
 }
 
 local orbitConn = nil
+local headStompConn = nil
 local lastTeleport = 0
+local Gui, MainFrame, StatusLabel, TargetLabel, ToggleButton, HeadStompButton
 
--- UI elements
-local Gui, MainFrame, StatusLabel, TargetLabel
-local RadiusSlider, SpeedSlider, ToggleButton
-
--- Xóa UI cũ
-if player.PlayerGui:FindFirstChild("OrbitByNhat") then
-    player.PlayerGui.OrbitByNhat:Destroy()
+if player.PlayerGui:FindFirstChild("OrbitByNhat") then    player.PlayerGui.OrbitByNhat:Destroy()
 end
 
--- Tạo GUI
 Gui = Instance.new("ScreenGui")
 Gui.Name = "OrbitByNhat"
 Gui.Parent = player:WaitForChild("PlayerGui")
 Gui.ResetOnSpawn = false
 
 MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 280, 0, 215)
-MainFrame.Position = UDim2.new(0.5, -140, 0.3, -107)
+MainFrame.Size = UDim2.new(0, 260, 0, 195)
+MainFrame.Position = UDim2.new(0.5, -130, 0.3, -97)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Parent = Gui
 
--- Bo tròn MainFrame
 local MainCorner = Instance.new("UICorner")
 MainCorner.CornerRadius = UDim.new(0, 14)
 MainCorner.Parent = MainFrame
 
--- Viền ngoài
 local MainStroke = Instance.new("UIStroke")
 MainStroke.Thickness = 2
 MainStroke.Color = Color3.fromRGB(150, 0, 255)
 MainStroke.Parent = MainFrame
 
--- Tiêu đề
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -20, 0, 30)
 Title.Position = UDim2.new(0, 10, 0, 10)
@@ -61,7 +52,6 @@ Title.TextSize = 18
 Title.Font = Enum.Font.SourceSansBold
 Title.Parent = MainFrame
 
--- Trạng thái
 StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -20, 0, 28)
 StatusLabel.Position = UDim2.new(0, 10, 0, 46)
@@ -77,7 +67,6 @@ local StatusCorner = Instance.new("UICorner")
 StatusCorner.CornerRadius = UDim.new(0, 8)
 StatusCorner.Parent = StatusLabel
 
--- Mục tiêu
 TargetLabel = Instance.new("TextLabel")
 TargetLabel.Size = UDim2.new(1, -20, 0, 28)
 TargetLabel.Position = UDim2.new(0, 10, 0, 80)
@@ -93,76 +82,9 @@ local TargetCorner = Instance.new("UICorner")
 TargetCorner.CornerRadius = UDim.new(0, 8)
 TargetCorner.Parent = TargetLabel
 
--- Radius
-local RadiusLabel = Instance.new("TextLabel")
-RadiusLabel.Size = UDim2.new(0.4, 0, 0, 20)
-RadiusLabel.Position = UDim2.new(0, 14, 0, 116)
-RadiusLabel.BackgroundTransparency = 1
-RadiusLabel.Text = "Radius (1-10000):"
-RadiusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-RadiusLabel.TextSize = 11
-RadiusLabel.Font = Enum.Font.SourceSans
-RadiusLabel.TextXAlignment = Enum.TextXAlignment.Left
-RadiusLabel.Parent = MainFrame
-
-RadiusSlider = Instance.new("TextBox")
-RadiusSlider.Size = UDim2.new(0.48, 0, 0, 24)
-RadiusSlider.Position = UDim2.new(0.45, 0, 0, 114)
-RadiusSlider.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-RadiusSlider.BorderSizePixel = 0
-RadiusSlider.Text = tostring(settings.radius)
-RadiusSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
-RadiusSlider.TextSize = 12
-RadiusSlider.Font = Enum.Font.SourceSans
-RadiusSlider.Parent = MainFrame
-
-local RadiusCorner = Instance.new("UICorner")
-RadiusCorner.CornerRadius = UDim.new(0, 8)
-RadiusCorner.Parent = RadiusSlider
-
--- Stroke cho Radius
-local RadiusStroke = Instance.new("UIStroke")
-RadiusStroke.Thickness = 1
-RadiusStroke.Color = Color3.fromRGB(100, 100, 150)
-RadiusStroke.Parent = RadiusSlider
-
--- Speed
-local SpeedLabel = Instance.new("TextLabel")
-SpeedLabel.Size = UDim2.new(0.4, 0, 0, 20)
-SpeedLabel.Position = UDim2.new(0, 14, 0, 146)
-SpeedLabel.BackgroundTransparency = 1
-SpeedLabel.Text = "Speed (1-10000):"
-SpeedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-SpeedLabel.TextSize = 11
-SpeedLabel.Font = Enum.Font.SourceSans
-SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
-SpeedLabel.Parent = MainFrame
-
-SpeedSlider = Instance.new("TextBox")
-SpeedSlider.Size = UDim2.new(0.48, 0, 0, 24)
-SpeedSlider.Position = UDim2.new(0.45, 0, 0, 144)
-SpeedSlider.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-SpeedSlider.BorderSizePixel = 0
-SpeedSlider.Text = tostring(settings.speed)
-SpeedSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
-SpeedSlider.TextSize = 12
-SpeedSlider.Font = Enum.Font.SourceSans
-SpeedSlider.Parent = MainFrame
-
-local SpeedCorner = Instance.new("UICorner")
-SpeedCorner.CornerRadius = UDim.new(0, 8)
-SpeedCorner.Parent = SpeedSlider
-
--- Stroke cho Speed
-local SpeedStroke = Instance.new("UIStroke")
-SpeedStroke.Thickness = 1
-SpeedStroke.Color = Color3.fromRGB(100, 100, 150)
-SpeedStroke.Parent = SpeedSlider
-
--- Nút Bật/Tắt - Style giống DESYNC CONTROLLER
 ToggleButton = Instance.new("TextButton")
-ToggleButton.Size = UDim2.new(1, -28, 0, 38)
-ToggleButton.Position = UDim2.new(0, 14, 0, 174)
+ToggleButton.Size = UDim2.new(1, -20, 0, 35)
+ToggleButton.Position = UDim2.new(0, 10, 0, 114)
 ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
 ToggleButton.BorderSizePixel = 0
 ToggleButton.Text = "START ORBIT"
@@ -171,183 +93,244 @@ ToggleButton.TextSize = 14
 ToggleButton.Font = Enum.Font.SourceSansBold
 ToggleButton.Parent = MainFrame
 
--- Bo tròn nút (cong như DESYNC)
 local ToggleCorner = Instance.new("UICorner")
 ToggleCorner.CornerRadius = UDim.new(0, 10)
 ToggleCorner.Parent = ToggleButton
 
--- Stroke cho nút
 local ToggleStroke = Instance.new("UIStroke")
 ToggleStroke.Thickness = 2
 ToggleStroke.Color = Color3.fromRGB(0, 255, 0)
 ToggleStroke.Parent = ToggleButton
 
--- === CHỨC NĂNG TÌM MỤC TIÊU ===
+-- Nút HEAD STOMP (Bay trên đầu địch)
+HeadStompButton = Instance.new("TextButton")
+HeadStompButton.Size = UDim2.new(1, -20, 0, 35)
+HeadStompButton.Position = UDim2.new(0, 10, 0, 155)
+HeadStompButton.BackgroundColor3 = Color3.fromRGB(100, 50, 0)
+HeadStompButton.BorderSizePixel = 0
+HeadStompButton.Text = "👣 HEAD STOMP"
+HeadStompButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+HeadStompButton.TextSize = 14
+HeadStompButton.Font = Enum.Font.SourceSansBold
+HeadStompButton.Parent = MainFrame
+
+local HeadStompCorner = Instance.new("UICorner")
+HeadStompCorner.CornerRadius = UDim.new(0, 10)
+HeadStompCorner.Parent = HeadStompButton
+
+local HeadStompStroke = Instance.new("UIStroke")
+HeadStompStroke.Thickness = 2
+HeadStompStroke.Color = Color3.fromRGB(255, 150, 0)
+HeadStompStroke.Parent = HeadStompButton
+
+-- === TÌM MỤC TIÊU ===
 local function findTarget()
-    local nearest = nil
-    local minDist = math.huge
-    local myChar = player.Character
-    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = myChar.HumanoidRootPart.Position
-    
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local hum = p.Character:FindFirstChild("Humanoid")
-            if hum and hum.Health > 0 then
-                local dist = (myPos - p.Character.HumanoidRootPart.Position).Magnitude
-                if dist < minDist then
-                    minDist = dist
-                    nearest = p
-                end
-            end
-        end
-    end
-    return nearest
+	local nearest = nil
+	local minDist = math.huge
+	local myChar = player.Character
+	if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+	local myPos = myChar.HumanoidRootPart.Position
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+			local hum = p.Character:FindFirstChild("Humanoid")
+			if hum and hum.Health > 0 then
+				local dist = (myPos - p.Character.HumanoidRootPart.Position).Magnitude
+				if dist < minDist then
+					minDist = dist
+					nearest = p
+				end
+			end
+		end
+	end
+	return nearest
 end
 
--- === JITTER ORBIT ===
+-- === ORBIT (Bay vòng quanh) ===
 local function startOrbit()
-    if settings.active then return end
-    
-    local target = findTarget()
-    if not target then
-        TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
-        return
-    end
-    
-    settings.active = true
-    settings.target = target
-    settings.radius = math.clamp(tonumber(RadiusSlider.Text) or 10000, 1, 10000)
-    settings.speed = math.clamp(tonumber(SpeedSlider.Text) or 10000, 1, 10000)
-    
-    StatusLabel.Text = "🟢 ORBIT ACTIVE"
-    StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-    TargetLabel.Text = "🎯 TARGET: " .. target.Name
-    ToggleButton.Text = "STOP ORBIT"
-    ToggleButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-    ToggleStroke.Color = Color3.fromRGB(255, 0, 0)
-    
-    workspace.Gravity = 0
-    
-    local angleBase = 0
-    local jitterPhase = 0
-    
-    if orbitConn then orbitConn:Disconnect() end
-    
-    orbitConn = RunService.Heartbeat:Connect(function(deltaTime)
-        if not settings.active then
-            orbitConn:Disconnect()
-            return
-        end
-        
-        if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
-            settings.target = findTarget()
-            if not settings.target then
-                stopOrbit()
-                return
-            end
-            TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
-        end
-        
-        local targetRoot = settings.target.Character.HumanoidRootPart
-        local myChar = player.Character
-        if not myChar then return end
-        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-        if not myRoot then return end
-        
-        local now = tick()
-        local interval = 1 / settings.speed
-        if now - lastTeleport < interval then return end
-        lastTeleport = now
-        
-        angleBase = (angleBase + 0.5) % (math.pi * 2)
-        jitterPhase = jitterPhase + 0.7
-        
-        local r = settings.radius
-        local targetPos = targetRoot.Position
-        
-        local baseX = math.sin(angleBase) * r
-        local baseZ = math.cos(angleBase) * r
-        
-        local jitterX = math.sin(jitterPhase * 5) * (r * 0.5) + math.random(-settings.jitterAmount, settings.jitterAmount)
-        local jitterY = math.cos(jitterPhase * 3) * (r * 0.6) + math.random(-settings.jitterAmount, settings.jitterAmount) + 30
-        local jitterZ = math.sin(jitterPhase * 4) * (r * 0.4) + math.random(-settings.jitterAmount, settings.jitterAmount)
-        
-        local desiredPos = Vector3.new(
-            targetPos.X + baseX + jitterX,
-            targetPos.Y + jitterY,
-            targetPos.Z + baseZ + jitterZ
-        )
-        
-        myRoot.CFrame = CFrame.new(desiredPos)
-        myRoot.CFrame = myRoot.CFrame * CFrame.Angles(
-            math.rad(math.random(-60, 60)),
-            math.rad(math.random(0, 360)),
-            math.rad(math.random(-60, 60))
-        )
-        
-        myRoot.Velocity = Vector3.zero
-        myRoot.RotVelocity = Vector3.zero
-        
-        local hum = myChar:FindFirstChild("Humanoid")
-        if hum then
-            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-        end
-    end)
+	if settings.active then return end
+	if settings.headStomp then stopHeadStomp() end
+	local target = findTarget()
+	if not target then
+		TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
+		return
+	end
+	settings.active = true
+	settings.target = target
+	StatusLabel.Text = "🟢 ORBIT ACTIVE"
+	StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+	TargetLabel.Text = "🎯 TARGET: " .. target.Name
+	ToggleButton.Text = "STOP ORBIT"
+	ToggleButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+	ToggleStroke.Color = Color3.fromRGB(255, 0, 0)
+	workspace.Gravity = 0
+	local angleBase = 0
+	local jitterPhase = 0
+	if orbitConn then orbitConn:Disconnect() end
+	orbitConn = RunService.Heartbeat:Connect(function()
+		if not settings.active then orbitConn:Disconnect() return end
+		if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
+			settings.target = findTarget()
+			if not settings.target then stopOrbit() return end
+			TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
+		end
+		local targetRoot = settings.target.Character.HumanoidRootPart
+		local myChar = player.Character
+		if not myChar then return end
+		local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then return end
+		local now = tick()
+		local interval = 1 / settings.speed
+		if now - lastTeleport < interval then return end
+		lastTeleport = now
+		angleBase = (angleBase + 0.5) % (math.pi * 2)
+		jitterPhase = jitterPhase + 0.7
+		local r = settings.radius
+		local targetPos = targetRoot.Position
+		local baseX = math.sin(angleBase) * r
+		local baseZ = math.cos(angleBase) * r
+		local jitterX = math.sin(jitterPhase * 5) * (r * 0.5) + math.random(-settings.jitterAmount, settings.jitterAmount)
+		local jitterY = math.cos(jitterPhase * 3) * (r * 0.6) + math.random(-settings.jitterAmount, settings.jitterAmount) + 30
+		local jitterZ = math.sin(jitterPhase * 4) * (r * 0.4) + math.random(-settings.jitterAmount, settings.jitterAmount)
+		local desiredPos = Vector3.new(
+			targetPos.X + baseX + jitterX,
+			targetPos.Y + jitterY,
+			targetPos.Z + baseZ + jitterZ
+		)
+		myRoot.CFrame = CFrame.new(desiredPos)
+		myRoot.CFrame = myRoot.CFrame * CFrame.Angles(
+			math.rad(math.random(-60, 60)),
+			math.rad(math.random(0, 360)),
+			math.rad(math.random(-60, 60))
+		)
+		myRoot.Velocity = Vector3.zero
+		myRoot.RotVelocity = Vector3.zero
+		local hum = myChar:FindFirstChild("Humanoid")
+		if hum then
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+		end
+	end)
 end
 
 local function stopOrbit()
-    settings.active = false
-    if orbitConn then orbitConn:Disconnect() orbitConn = nil end
-    
-    workspace.Gravity = 196.2
-    
-    local char = player.Character
-    if char then
-        local hum = char:FindFirstChild("Humanoid")
-        if hum then
-            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-        end
-    end
-    
-    StatusLabel.Text = "🔴 INACTIVE"
-    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-    TargetLabel.Text = "🎯 TARGET: NONE"
-    ToggleButton.Text = "START ORBIT"
-    ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
-    ToggleStroke.Color = Color3.fromRGB(0, 255, 0)
+	settings.active = false
+	if orbitConn then orbitConn:Disconnect() orbitConn = nil end
+	workspace.Gravity = 196.2
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChild("Humanoid")
+		if hum then
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+		end
+	end
+	StatusLabel.Text = "🔴 INACTIVE"
+	StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+	TargetLabel.Text = "🎯 TARGET: NONE"
+	ToggleButton.Text = "START ORBIT"
+	ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+	ToggleStroke.Color = Color3.fromRGB(0, 255, 0)
 end
 
--- === KẾT NỐI SỰ KIỆN ===
+-- === HEAD STOMP (Bay trên đầu địch) ===
+local function startHeadStomp()
+	if settings.headStomp then return end
+	if settings.active then stopOrbit() end
+	local target = findTarget()
+	if not target then
+		TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
+		return
+	end
+	settings.headStomp = true
+	settings.target = target
+	StatusLabel.Text = "🟣 HEAD STOMP ACTIVE"
+	StatusLabel.TextColor3 = Color3.fromRGB(255, 150, 0)
+	TargetLabel.Text = "🎯 TARGET: " .. target.Name
+	HeadStompButton.Text = "👣 STOP STOMP"
+	HeadStompButton.BackgroundColor3 = Color3.fromRGB(150, 50, 0)
+	HeadStompStroke.Color = Color3.fromRGB(255, 0, 0)
+	workspace.Gravity = 0
+
+	if headStompConn then headStompConn:Disconnect() end
+	headStompConn = RunService.Heartbeat:Connect(function()
+		if not settings.headStomp then headStompConn:Disconnect() return end
+		if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
+			settings.target = findTarget()
+			if not settings.target then stopHeadStomp() return end
+			TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
+		end
+		local targetRoot = settings.target.Character.HumanoidRootPart
+		local targetHead = settings.target.Character:FindFirstChild("Head")
+		local myChar = player.Character
+		if not myChar then return end
+		local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+		if not myRoot then return end
+
+		-- Vị trí ngay trên đầu mục tiêu
+		local headPos = targetHead and targetHead.Position or targetRoot.Position + Vector3.new(0, 3, 0)
+		local stompPos = headPos + Vector3.new(0, 3, 0)  -- Đứng ngay trên đầu
+
+		myRoot.CFrame = CFrame.new(stompPos)
+		myRoot.Velocity = Vector3.zero
+		myRoot.RotVelocity = Vector3.zero
+
+		local hum = myChar:FindFirstChild("Humanoid")
+		if hum then
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+		end
+	end)
+end
+
+local function stopHeadStomp()
+	settings.headStomp = false
+	if headStompConn then headStompConn:Disconnect() headStompConn = nil end
+	workspace.Gravity = 196.2
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChild("Humanoid")
+		if hum then
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+		end
+	end
+	StatusLabel.Text = "🔴 INACTIVE"
+	StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+	TargetLabel.Text = "🎯 TARGET: NONE"
+	HeadStompButton.Text = "👣 HEAD STOMP"
+	HeadStompButton.BackgroundColor3 = Color3.fromRGB(100, 50, 0)
+	HeadStompStroke.Color = Color3.fromRGB(255, 150, 0)
+end
+
+-- === KẾT NỐI NÚT ===
 ToggleButton.MouseButton1Click:Connect(function()
-    if settings.active then stopOrbit() else startOrbit() end
+	if settings.active then 
+		stopOrbit() 
+	else 
+		if settings.headStomp then stopHeadStomp() end
+		startOrbit() 
+	end
 end)
 
-RadiusSlider.FocusLost:Connect(function()
-    local val = tonumber(RadiusSlider.Text)
-    if val then 
-        settings.radius = math.clamp(val, 1, 10000)
-        RadiusSlider.Text = tostring(settings.radius)
-    end
+HeadStompButton.MouseButton1Click:Connect(function()
+	if settings.headStomp then
+		stopHeadStomp()
+	else
+		if settings.active then stopOrbit() end
+		startHeadStomp()
+	end
 end)
 
-SpeedSlider.FocusLost:Connect(function()
-    local val = tonumber(SpeedSlider.Text)
-    if val then 
-        settings.speed = math.clamp(val, 1, 10000)
-        SpeedSlider.Text = tostring(settings.speed)
-    end
-end)
-
--- Giữ trạng thái khi chết
 player.CharacterAdded:Connect(function()
-    if settings.active then
-        stopOrbit()
-        task.wait(0.5)
-        startOrbit()
-    end
+	if settings.active then
+		stopOrbit()
+		task.wait(0.5)
+		startOrbit()
+	elseif settings.headStomp then
+		stopHeadStomp()
+		task.wait(0.5)
+		startHeadStomp()
+	end
 end)
 
-print("✅ ORBIT BY NHẬT!.")
+print("✅ ORBIT BY NHẬT loaded!")
