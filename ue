@@ -1,4 +1,4 @@
--- Fix: chờ game load xong hoàn toàn trước khi inject
+-- Fix: wait for game to load
 local _Players = game:GetService("Players")
 local _startTime = tick()
 repeat
@@ -12,25 +12,12 @@ repeat
         break
     end
 until false
-task.wait(2) -- buffer thêm sau khi detect xong
+task.wait(2)
 
 local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua'))()
 local SaveManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua'))()
-
--- Patch SaveManager.Load để tránh lỗi SetValueRGB trên non-color options
-local _origLoad = SaveManager.Load
-SaveManager.Load = function(self, name)
-    local ok, err = pcall(_origLoad, self, name)
-    if not ok then
-        warn("[SaveManager patch] Load error ignored: " .. tostring(err))
-    end
-end
-local _origLoadAuto = SaveManager.LoadAutoloadConfig
 SaveManager.LoadAutoloadConfig = function(self)
-    local ok, err = pcall(_origLoadAuto, self)
-    if not ok then
-        warn("[SaveManager patch] LoadAutoloadConfig error ignored: " .. tostring(err))
-    end
+    -- disabled: causes SetValueRGB crash
 end
 local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua'))()
 
@@ -72,23 +59,6 @@ if not getgenv().Options then
 end
 local Toggles = getgenv().Toggles
 local Options = getgenv().Options
-
--- Patch: add SetValueRGB stub to all existing and future Options/Toggles entries
-local _orig_options_mt = getmetatable(Options) or {}
-setmetatable(Options, {
-    __index = function(t, k)
-        local v = rawget(t, k)
-        if v == nil then
-            -- return stub object so SetValueRGB won't error
-            return setmetatable({}, {
-                __index = function(_, method)
-                    return function() end
-                end
-            })
-        end
-        return v
-    end
-})
 
 local State = {
     lua = {
@@ -138,10 +108,6 @@ local State = {
         skeleton = {},
     },
     running = {},
-    drawings = {
-        silent = {},
-        aimbot = {},
-    },
 }
 
 local BloomEffect = Instance.new("BloomEffect")
@@ -188,7 +154,7 @@ local proxy_font_info = make_proxy({
 })
 local proxy_healthbar_color = make_proxy(ColorSequence.new(Color3.new(0, 1, 0)))
 local proxy_frame_type = make_proxy(nil) -- RenderStepped reference
-local proxy_esp_enabled = make_proxy(false)
+local proxy_esp_enabled = make_proxy(true)
 
 local function world_to_viewport_wrapped(position)
     local screenPos, onScreen = Camera:WorldToViewportPoint(position)
@@ -651,15 +617,14 @@ local J = function(R)
 local V = function(R)
 		local T = R[0]
 		return function()
-			if not Toggles.color_correction_enabled then return end
 			T.Enabled = Toggles.color_correction_enabled.Value
 			if not T.Enabled then
 				return
 			end
-			if Options.color_correction_tint then T.TintColor = Options.color_correction_tint.Value end
-			if Options.color_correction_saturation then T.Saturation = Options.color_correction_saturation.Value end
-			if Options.color_correction_contrast then T.Contrast = Options.color_correction_contrast.Value end
-			if Options.color_correction_brightness then T.Brightness = Options.color_correction_brightness.Value end
+			T.TintColor = Options.color_correction_tint.Value
+			T.Saturation = Options.color_correction_saturation.Value
+			T.Contrast = Options.color_correction_contrast.Value
+			T.Brightness = Options.color_correction_brightness.Value
 		end
 	end
 
@@ -1018,12 +983,11 @@ local S = function(R)
 		local T = R[1]
 		local q = R[0]
 		return function()
-			if not Toggles.sunrays_enabled then return end
 			local R = Toggles.sunrays_enabled.Value
 			if R then
 				q.Enabled = true
-				if Options.sunrays_spread then q.Spread = Options.sunrays_spread.Value end
-				if Options.sunrays_intensity then q.Intensity = Options.sunrays_intensity.Value end
+				q.Spread = Options.sunrays_spread.Value
+				q.Intensity = Options.sunrays_intensity.Value
 			else
 				for R, g in T do
 					q[R] = g
@@ -2086,7 +2050,7 @@ local r = function(R)
 						if d:find("Color") then
 							self.Library[d] = Color3.fromHex(Z)
 							if q[d] then
-								if q[d] and q[d].SetValueRGB then q[d]:SetValueRGB(Color3.fromHex(Z)) elseif q[d] and q[d].SetValue then q[d]:SetValue(Color3.fromHex(Z)) end
+								q[d]:SetValueRGB(Color3.fromHex(Z))
 							end
 						else
 							self.Library[d] = Z
@@ -2472,7 +2436,7 @@ local N = function(R)
 				local B, f = t[1].Value, t[#t].Value
 				for Q = 2, #t - 1 do
 					local z = t[Q]
-					pcall(function() if z.SetValueRGB then z:SetValueRGB(B:Lerp(f, Q / #t), z.Transparency) end end)
+					z:SetValueRGB(B:Lerp(f, Q / #t), z.Transparency)
 				end
 				L:Notify("created gradient!", 2)
 				R:Hide()
@@ -2485,7 +2449,7 @@ local N = function(R)
 					end
 				end
 				for J, J in t do
-					pcall(function() if J.SetValueRGB then J:SetValueRGB(H.Value, J.Transparency) end end)
+					J:SetValueRGB(H.Value, J.Transparency)
 				end
 				L:Notify("matched all colors!", 2)
 				R:Hide()
@@ -2499,7 +2463,7 @@ local N = function(R)
 				if not L.ColorClipboard then
 					return L:Notify("You have not copied a color!", 2)
 				end
-				pcall(function() if H.SetValueRGB then H:SetValueRGB(L.ColorClipboard.Value, L.ColorClipboard.Transparency) end end)
+				H:SetValueRGB(L.ColorClipboard.Value, L.ColorClipboard.Transparency)
 				R:Hide()
 			end)
 			if L.FlagCopying then
@@ -4550,7 +4514,7 @@ local k = function(R)
 						end,
 						Load = function(F, A)
 							if q[F] then
-								pcall(function() if q[F] and q[F].SetValueRGB then q[F]:SetValueRGB(Color3.fromHex(A.value), A.transparency) end end)
+								q[F]:SetValueRGB(Color3.fromHex(A.value), A.transparency)
 							end
 						end,
 					},
@@ -4835,6 +4799,7 @@ local function initialize(Library)
     ESPGroupbox:AddToggle("esp_material", { Text = "material", Default = false })
     ESPGroupbox:AddDropdown("esp_bounds_type", { Text = "bounds type", Values = {"dynamic", "static"}, Default = "dynamic" })
     ESPGroupbox:AddDropdown("esp_world_font", { Text = "font", Values = {"Code", "Gotham", "GothamBold"}, Default = "Code" })
+    ESPGroupbox:AddDropdown("esp_font", { Text = "text font", Values = {"Code", "Gotham", "GothamBold"}, Default = "Code" })
     ESPGroupbox:AddSlider("esp_bounds_width_scale", { Text = "width scale", Min = 0, Max = 200, Default = 100, Suffix = "%", Rounding = 0 })
     ESPGroupbox:AddSlider("esp_skeleton_thickness", { Text = "skeleton thickness", Min = 1, Max = 5, Default = 1, Rounding = 0 })
     ESPGroupbox:AddSlider("esp_healthbar_health_lerp", { Text = "health lerp", Min = 0, Max = 1, Default = 0.1, Rounding = 2 })
@@ -4920,30 +4885,30 @@ local function initialize(Library)
     local atmo_update = M({ [0] = AtmosphereEffect })
     local sun_update = S({ [0] = SunRaysEffect, [1] = SunRaysDefaults })
 
-    pcall(function() Toggles.bloom_enabled:OnChanged(bloom_update) end)
-    pcall(function() Options.bloom_intensity:OnChanged(bloom_update) end)
-    pcall(function() Options.bloom_size:OnChanged(bloom_update) end)
-    pcall(function() Options.bloom_threshold:OnChanged(bloom_update) end)
+    Toggles.bloom_enabled:OnChanged(bloom_update)
+    Options.bloom_intensity:OnChanged(bloom_update)
+    Options.bloom_size:OnChanged(bloom_update)
+    Options.bloom_threshold:OnChanged(bloom_update)
 
-    pcall(function() Toggles.color_correction_enabled:OnChanged(cc_update) end)
-    pcall(function() Options.color_correction_saturation:OnChanged(cc_update) end)
-    pcall(function() Options.color_correction_contrast:OnChanged(cc_update) end)
-    pcall(function() Options.color_correction_brightness:OnChanged(cc_update) end)
-    pcall(function() Options.color_correction_tint:OnChanged(cc_update) end)
+    Toggles.color_correction_enabled:OnChanged(cc_update)
+    Options.color_correction_saturation:OnChanged(cc_update)
+    Options.color_correction_contrast:OnChanged(cc_update)
+    Options.color_correction_brightness:OnChanged(cc_update)
+    Options.color_correction_tint:OnChanged(cc_update)
 
-    pcall(function() Toggles.atmosphere_enabled:OnChanged(atmo_update) end)
-    pcall(function() Options.atmosphere_decay:OnChanged(atmo_update) end)
-    pcall(function() Options.atmosphere_glare:OnChanged(atmo_update) end)
-    pcall(function() Options.atmosphere_haze:OnChanged(atmo_update) end)
-    pcall(function() Options.atmosphere_density:OnChanged(atmo_update) end)
-    pcall(function() Options.atmosphere_offset:OnChanged(atmo_update) end)
-    pcall(function() Options.atmosphere_color:OnChanged(atmo_update) end)
+    Toggles.atmosphere_enabled:OnChanged(atmo_update)
+    Options.atmosphere_decay:OnChanged(atmo_update)
+    Options.atmosphere_glare:OnChanged(atmo_update)
+    Options.atmosphere_haze:OnChanged(atmo_update)
+    Options.atmosphere_density:OnChanged(atmo_update)
+    Options.atmosphere_offset:OnChanged(atmo_update)
+    Options.atmosphere_color:OnChanged(atmo_update)
 
-    pcall(function() Toggles.sunrays_enabled:OnChanged(sun_update) end)
-    pcall(function() Options.sunrays_spread:OnChanged(sun_update) end)
-    pcall(function() Options.sunrays_intensity:OnChanged(sun_update) end)
+    Toggles.sunrays_enabled:OnChanged(sun_update)
+    Options.sunrays_spread:OnChanged(sun_update)
+    Options.sunrays_intensity:OnChanged(sun_update)
 
-    pcall(function() Options.lighting_technology:OnChanged(function() end)
+    Options.lighting_technology:OnChanged(function()
         pcall(function()
             local tech = Options.lighting_technology.Value
             if tech == "ShadowMap" then
@@ -4958,6 +4923,8 @@ local function initialize(Library)
 
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        or ReplicatedStorage:WaitForChild("Remotes", 10)
+        or ReplicatedStorage:FindFirstChild("Remotes", true)
     local RivalsModules = {}
 
     local origGetRawMetatable = clonefunction and clonefunction(getrawmetatable) or getrawmetatable
@@ -4968,14 +4935,29 @@ local function initialize(Library)
     local localPlayerData = nil
 
     pcall(function()
-        for _, v in pairs(getgc(true)) do
-            if type(v) == "table" and rawget(v, "ClientFighter") and rawget(v, "IsLocalPlayer") then
-                localFighter = v
-                break
+        if getgc then
+            for _, v in pairs(getgc(true)) do
+                if type(v) == "table" and rawget(v, "ClientFighter") and rawget(v, "IsLocalPlayer") then
+                    localFighter = v
+                    break
+                end
             end
         end
     end)
+    if not localFighter then
+        pcall(function()
+            if getgc then
+                for _, v in pairs(getgc(true)) do
+                    if type(v) == "table" and rawget(v, "ClientFighter") then
+                        localFighter = v
+                        break
+                    end
+                end
+            end
+        end)
+    end
     State.localFighter = localFighter
+    warn("[UE] localFighter found: " .. tostring(localFighter ~= nil))
 
     pcall(function()
         local viewmodelsModule = ReplicatedStorage:FindFirstChild("ViewModels", true)
@@ -5115,24 +5097,24 @@ local function initialize(Library)
     aimbotCircle.Transparency = 1
     State.drawings.aimbot.circle = aimbotCircle
 
-    pcall(function() Toggles.silent_visualize:OnChanged(function() end)
+    Toggles.silent_visualize:OnChanged(function()
         silentCircle.Visible = Toggles.silent_visualize.Value and Toggles.aimbot_toggle.Value
     end)
-    pcall(function() Options.silent_radius:OnChanged(function() end)
+    Options.silent_radius:OnChanged(function()
         silentCircle.Radius = Options.silent_radius.Value
     end)
-    pcall(function() Options.silent_fill_color1:OnChanged(function() end)
+    Options.silent_fill_color1:OnChanged(function()
         silentCircle.Color = Options.silent_fill_color1.Value
     end)
-    pcall(function() Toggles.aimbot_fov_outline:OnChanged(function() end)
+    Toggles.aimbot_fov_outline:OnChanged(function()
         aimbotCircle.Visible = Toggles.aimbot_fov_outline.Value
     end)
-    pcall(function() Options.aimbot_outline_color1:OnChanged(function() end)
+    Options.aimbot_outline_color1:OnChanged(function()
         aimbotCircle.Color = Options.aimbot_outline_color1.Value
     end)
-    pcall(function() Options.aimbot_fov_rotation_speed:OnChanged(function() end) end)
+    Options.aimbot_fov_rotation_speed:OnChanged(function() end)
 
-    pcall(function() Toggles.aimbot_toggle:OnChanged(function() end)
+    Toggles.aimbot_toggle:OnChanged(function()
         if not Toggles.aimbot_toggle.Value then
             silentCircle.Visible = false
             State.manipulation.targetPosition = nil
@@ -5198,7 +5180,7 @@ local function initialize(Library)
     end)
 
     local triggerConn = nil
-    pcall(function() Toggles.triggerbot_enabled:OnChanged(function() end)
+    Toggles.triggerbot_enabled:OnChanged(function()
         if triggerConn then triggerConn:Disconnect(); triggerConn = nil end
         if not Toggles.triggerbot_enabled.Value then return end
 
@@ -5228,7 +5210,7 @@ local function initialize(Library)
         end)
     end)
 
-    pcall(function() Toggles.exploits_full_auto:OnChanged(function() end)
+    Toggles.exploits_full_auto:OnChanged(function()
         pcall(function()
             if not localFighter or not localFighter.EquippedItem then return end
             local weapon = localFighter.EquippedItem
@@ -5244,14 +5226,24 @@ local function initialize(Library)
     State.manipulation.active = false
     State.manipulation.targetPosition = nil
 
+    -- Init raycastParams if not already set
+    if not State.raycastParams then
+        State.raycastParams = RaycastParams.new()
+        State.raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        State.raycastParams.FilterDescendantsInstances = {LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()}
+    end
+
     State.raycastParams = RaycastParams.new()
     State.raycastParams.FilterType = Enum.RaycastFilterType.Exclude
     State.raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
     LocalPlayer.CharacterAdded:Connect(function(char)
+        if State.raycastParams then
+            State.raycastParams.FilterDescendantsInstances = {char}
+        end
         State.raycastParams.FilterDescendantsInstances = {char}
     end)
 
-    pcall(function() Toggles.silent_manipulation:OnChanged(function() end)
+    Toggles.silent_manipulation:OnChanged(function()
         State.manipulation.active = Toggles.silent_manipulation.Value
     end)
 
