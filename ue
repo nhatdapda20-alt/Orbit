@@ -1,5 +1,5 @@
 -- ============================================
--- UNNAMED NHAT - FULL CHỨC NĂNG (RAGEBOT + TRIGGERBOT + ANTI AIM + ESP FULL + WORLD)
+-- UNNAMED NHAT - HOÀN CHỈNH (SAVE/LOAD + BYPASS + FULL CHỨC NĂNG)
 -- ============================================
 
 local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua'))()
@@ -13,98 +13,37 @@ local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
+local ContextActionService = game:GetService("ContextActionService")
+local TextService = game:GetService("TextService")
+local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
 -- ============================================
--- SETTINGS ĐẦY ĐỦ
+-- SETTINGS
 -- ============================================
 local settings = {
-    -- Void Spam
-    voidActive = false,
-    voidDepth = -670000,
-    voidSpamDelay = 0.01,
-    
-    -- Orbit
-    orbitActive = false,
-    orbitRadius = 5000,
-    orbitSpeed = 5000,
-    
-    -- Head Stomp
+    voidActive = false, voidDepth = -670000, voidSpamDelay = 0.01,
+    orbitActive = false, orbitRadius = 5000, orbitSpeed = 5000,
     headStompActive = false,
-    
-    -- Ragebot
-    ragebotEnabled = false,
-    ragebotPriority = "Head", -- Head, Body, Closest
-    ragebotVoidSpam = false,
-    
-    -- Aimbot
-    aimbotEnabled = false,
-    silentAim = false,
-    noSpread = true,
-    fullAuto = false,
-    hitChance = 100,
-    fovRadius = 100,
-    visibleOnly = true,
-    fovMoving = false,
-    fovRotationSpeed = 1,
-    
-    -- Triggerbot
-    triggerbotEnabled = false,
-    triggerbotMode = "always", -- always, scoped only
-    
-    -- Anti Aim
-    antiAimEnabled = false,
-    antiAimYaw = 0,
-    antiAimPitch = "none", -- none, look down, custom, offset
-    
-    -- ESP
-    espEnabled = false,
-    espBox = false,
-    espName = false,
-    espDistance = false,
-    espWeapon = false,
-    espHealthbar = false,
-    espSkeleton = false,
-    espFill = false,
-    espChams = false,
-    espShowTeam = false,
-    espOverrideAppearance = false,
-    espBodyColor = false,
-    espMaterial = false,
-    espBoundsType = "dynamic",
-    espFont = "Code",
-    espBoundsWidthScale = 100,
-    espSkeletonThickness = 1,
-    espHealthbarLerp = 0.1,
-    espObjectScale = 1,
-    
-    -- World
-    bloomEnabled = false,
-    bloomIntensity = 0.4,
-    bloomSize = 24,
-    bloomThreshold = 0.95,
-    ccEnabled = false,
-    ccTint = Color3.new(1, 1, 1),
-    ccSaturation = 0,
-    ccContrast = 0,
-    ccBrightness = 0,
-    atmoEnabled = false,
-    atmoColor = Color3.new(1, 1, 1),
-    atmoDecay = 0,
-    atmoGlare = 0,
-    atmoHaze = 0,
-    atmoDensity = 0.3,
-    atmoOffset = 0,
-    sunraysEnabled = false,
-    sunraysSpread = 0.5,
-    sunraysIntensity = 0.25,
-    lightingTechnology = "ShadowMap"
+    ragebotEnabled = false, ragebotPriority = "Head", ragebotVoidSpam = false,
+    aimbotEnabled = false, silentAim = false, noSpread = true, fullAuto = false,
+    hitChance = 100, fovRadius = 100, visibleOnly = true, fovMoving = false, fovRotationSpeed = 1,
+    triggerbotEnabled = false, triggerbotMode = "always",
+    antiAimEnabled = false, antiAimYaw = 0, antiAimPitch = "none",
+    espBox = false, espName = false, espDistance = false, espWeapon = false,
+    espHealthbar = false, espFill = false, espSkeleton = false, espChams = false,
+    espShowTeam = false, espBoundsType = "dynamic", espFont = "Code",
+    espBoundsWidthScale = 100, espSkeletonThickness = 1, espHealthbarLerp = 0.1, espObjectScale = 1,
+    bloomEnabled = false, bloomIntensity = 0.4, bloomSize = 24, bloomThreshold = 0.95,
+    ccEnabled = false, ccTint = Color3.new(1,1,1), ccSaturation = 0, ccContrast = 0, ccBrightness = 0,
+    atmoEnabled = false, atmoDecay = 0, atmoGlare = 0, atmoHaze = 0, atmoDensity = 0.3, atmoOffset = 0,
+    sunraysEnabled = false, sunraysSpread = 0.5, sunraysIntensity = 0.25,
+    lightingTechnology = "ShadowMap", keybindMode = "Always"
 }
 
--- Connections
 local voidConn, orbitConn, headStompConn, triggerConn, ragebotConn = nil, nil, nil, nil, nil
 local lastTeleport = 0
 local espObjects = {}
@@ -117,7 +56,6 @@ local function findNearestTarget()
     local myChar = LocalPlayer.Character
     if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
     local myPos = myChar.HumanoidRootPart.Position
-    
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
             local hum = p.Character:FindFirstChild("Humanoid")
@@ -141,12 +79,11 @@ end
 local function getRagebotTarget()
     local target = findNearestTarget()
     if not target or not target.Character then return nil end
-    
     if settings.ragebotPriority == "Head" then
         return target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")
     elseif settings.ragebotPriority == "Body" then
         return target.Character:FindFirstChild("UpperTorso") or target.Character:FindFirstChild("HumanoidRootPart")
-    else -- Closest
+    else
         return target.Character:FindFirstChild("HumanoidRootPart")
     end
 end
@@ -169,7 +106,6 @@ local function startVoidSpam()
             hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
             hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
         end
-        task.wait(settings.voidSpamDelay)
     end)
 end
 
@@ -191,9 +127,7 @@ end
 local function startOrbit()
     local target = findNearestTarget()
     if not target then return end
-    
     local angleBase, jitterPhase = 0, 0
-    
     if orbitConn then orbitConn:Disconnect() end
     orbitConn = RunService.Heartbeat:Connect(function()
         if not settings.orbitActive then orbitConn:Disconnect() return end
@@ -201,20 +135,16 @@ local function startOrbit()
             target = findNearestTarget()
             if not target then settings.orbitActive = false; return end
         end
-        
         local targetRoot = target.Character.HumanoidRootPart
         local myChar = LocalPlayer.Character
         if not myChar then return end
         local myRoot = myChar:FindFirstChild("HumanoidRootPart")
         if not myRoot then return end
-        
         local now = tick()
         if now - lastTeleport < 1/math.max(settings.orbitSpeed, 1) then return end
         lastTeleport = now
-        
         angleBase = (angleBase + 0.5) % (math.pi * 2)
         jitterPhase = jitterPhase + 0.7
-        
         local r = settings.orbitRadius
         local tp = targetRoot.Position
         local bx = math.sin(angleBase) * r
@@ -222,7 +152,6 @@ local function startOrbit()
         local jx = math.sin(jitterPhase * 5) * (r * 0.5) + math.random(-80, 80)
         local jy = math.cos(jitterPhase * 3) * (r * 0.6) + math.random(-80, 80) + 30
         local jz = math.sin(jitterPhase * 4) * (r * 0.4) + math.random(-80, 80)
-        
         myRoot.CFrame = CFrame.new(tp.X + bx + jx, tp.Y + jy, tp.Z + bz + jz)
         myRoot.Velocity = Vector3.zero
     end)
@@ -238,7 +167,6 @@ end
 local function startHeadStomp()
     local target = findNearestTarget()
     if not target then return end
-    
     local myChar = LocalPlayer.Character
     if myChar and myChar:FindFirstChild("HumanoidRootPart") then
         local headPos = getHeadPosition(target.Character)
@@ -246,7 +174,6 @@ local function startHeadStomp()
             myChar.HumanoidRootPart.CFrame = CFrame.new(headPos + Vector3.new(0, 3, 0))
         end
     end
-    
     if headStompConn then headStompConn:Disconnect() end
     headStompConn = RunService.Heartbeat:Connect(function()
         if not settings.headStompActive then headStompConn:Disconnect() return end
@@ -268,246 +195,23 @@ local function stopHeadStomp()
 end
 
 -- ============================================
--- ESP SYSTEM (ĐẦY ĐỦ)
--- ============================================
-local function createESP(player)
-    if espObjects[player] then return end
-    
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "ESP_" .. player.Name
-    gui.Parent = game:GetService("CoreGui")
-    
-    -- Box Outline (đen)
-    local boxOutline = Instance.new("Frame")
-    boxOutline.Name = "BoxOutline"
-    boxOutline.BorderSizePixel = 0
-    boxOutline.BackgroundColor3 = Color3.new(0, 0, 0)
-    boxOutline.BackgroundTransparency = 0
-    boxOutline.Size = UDim2.new(0, 0, 0, 0)
-    boxOutline.Visible = false
-    boxOutline.Parent = gui
-    
-    -- Box Inner (trắng)
-    local boxInner = Instance.new("Frame")
-    boxInner.Name = "BoxInner"
-    boxInner.BorderSizePixel = 0
-    boxInner.BackgroundColor3 = Color3.new(1, 1, 1)
-    boxInner.BackgroundTransparency = 0
-    boxInner.Size = UDim2.new(0, 0, 0, 0)
-    boxInner.Visible = false
-    boxInner.Parent = boxOutline
-    
-    -- Box Fill (trong suốt)
-    local boxFill = Instance.new("Frame")
-    boxFill.Name = "BoxFill"
-    boxFill.BorderSizePixel = 0
-    boxFill.BackgroundColor3 = Color3.new(1, 1, 1)
-    boxFill.BackgroundTransparency = 0.85
-    boxFill.Size = UDim2.new(0, 0, 0, 0)
-    boxFill.Visible = false
-    boxFill.Parent = boxInner
-    
-    -- Name
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Name = "Name"
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.TextColor3 = Color3.new(1, 1, 1)
-    nameLabel.TextStrokeTransparency = 0.5
-    nameLabel.Font = Enum.Font.SourceSans
-    nameLabel.TextSize = 13
-    nameLabel.Visible = false
-    nameLabel.Parent = gui
-    
-    -- Distance
-    local distLabel = Instance.new("TextLabel")
-    distLabel.Name = "Distance"
-    distLabel.BackgroundTransparency = 1
-    distLabel.TextColor3 = Color3.new(0.7, 0.8, 1)
-    distLabel.TextStrokeTransparency = 0.5
-    distLabel.Font = Enum.Font.SourceSans
-    distLabel.TextSize = 12
-    distLabel.Visible = false
-    distLabel.Parent = gui
-    
-    -- Weapon
-    local weaponLabel = Instance.new("TextLabel")
-    weaponLabel.Name = "Weapon"
-    weaponLabel.BackgroundTransparency = 1
-    weaponLabel.TextColor3 = Color3.new(1, 0.8, 0)
-    weaponLabel.TextStrokeTransparency = 0.5
-    weaponLabel.Font = Enum.Font.SourceSans
-    weaponLabel.TextSize = 12
-    weaponLabel.Visible = false
-    weaponLabel.Parent = gui
-    
-    -- Healthbar BG
-    local hpBg = Instance.new("Frame")
-    hpBg.Name = "HPBg"
-    hpBg.BorderSizePixel = 0
-    hpBg.BackgroundColor3 = Color3.new(0.3, 0, 0)
-    hpBg.BackgroundTransparency = 0
-    hpBg.Size = UDim2.new(0, 0, 0, 0)
-    hpBg.Visible = false
-    hpBg.Parent = gui
-    
-    -- Healthbar
-    local hpBar = Instance.new("Frame")
-    hpBar.Name = "HPBar"
-    hpBar.BorderSizePixel = 0
-    hpBar.BackgroundColor3 = Color3.new(0, 1, 0)
-    hpBar.BackgroundTransparency = 0
-    hpBar.Size = UDim2.new(0, 0, 0, 0)
-    hpBar.Visible = false
-    hpBar.Parent = hpBg
-    
-    espObjects[player] = {
-        gui = gui,
-        boxOutline = boxOutline, boxInner = boxInner, boxFill = boxFill,
-        nameLabel = nameLabel, distLabel = distLabel, weaponLabel = weaponLabel,
-        hpBg = hpBg, hpBar = hpBar
-    }
-end
-
-local function removeESP(player)
-    local obj = espObjects[player]
-    if obj then obj.gui:Destroy(); espObjects[player] = nil end
-end
-
-local function updateESP()
-    for player, obj in pairs(espObjects) do
-        local char = player.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then
-            obj.boxOutline.Visible = false; continue
-        end
-        
-        if not settings.espShowTeam and player.Team == LocalPlayer.Team then
-            obj.boxOutline.Visible = false; continue
-        end
-        
-        local root = char:FindFirstChild("HumanoidRootPart")
-        local head = char:FindFirstChild("Head")
-        local hum = char:FindFirstChild("Humanoid")
-        if not root or not hum or hum.Health <= 0 then
-            obj.boxOutline.Visible = false; continue
-        end
-        
-        local headPos = head and head.Position or root.Position + Vector3.new(0, 2.5, 0)
-        local footPos = root.Position - Vector3.new(0, 3, 0)
-        
-        local screenHead, onScreen = Camera:WorldToViewportPoint(headPos)
-        local screenFoot = Camera:WorldToViewportPoint(footPos)
-        
-        if not onScreen then
-            obj.boxOutline.Visible = false; obj.nameLabel.Visible = false
-            obj.distLabel.Visible = false; obj.weaponLabel.Visible = false
-            obj.hpBg.Visible = false
-            continue
-        end
-        
-        local height = math.abs(screenFoot.Y - screenHead.Y)
-        local width = height * 0.65
-        local x = screenHead.X - width / 2
-        local y = screenHead.Y
-        
-        -- Box
-        if settings.espBox then
-            obj.boxOutline.Visible = true
-            obj.boxOutline.Position = UDim2.new(0, x - 1, 0, y - 1)
-            obj.boxOutline.Size = UDim2.new(0, width + 2, 0, height + 2)
-            obj.boxInner.Size = UDim2.new(0, width + 2, 0, height + 2)
-            obj.boxFill.Size = UDim2.new(0, width, 0, height)
-            obj.boxFill.Visible = settings.espFill
-        else
-            obj.boxOutline.Visible = false
-        end
-        
-        -- Name
-        if settings.espName then
-            obj.nameLabel.Visible = true
-            obj.nameLabel.Text = player.Name
-            obj.nameLabel.Position = UDim2.new(0, screenHead.X - 50, 0, y - 18)
-            obj.nameLabel.Size = UDim2.new(0, 100, 0, 16)
-        else
-            obj.nameLabel.Visible = false
-        end
-        
-        -- Distance
-        if settings.espDistance then
-            local myChar = LocalPlayer.Character
-            if myChar and myChar:FindFirstChild("HumanoidRootPart") then
-                local dist = (myChar.HumanoidRootPart.Position - root.Position).Magnitude
-                obj.distLabel.Visible = true
-                obj.distLabel.Text = string.format("%.0f studs", dist)
-                obj.distLabel.Position = UDim2.new(0, screenHead.X - 50, 0, screenFoot.Y + 2)
-                obj.distLabel.Size = UDim2.new(0, 100, 0, 16)
-            end
-        else
-            obj.distLabel.Visible = false
-        end
-        
-        -- Weapon
-        if settings.espWeapon then
-            obj.weaponLabel.Visible = true
-            local tool = char:FindFirstChildOfClass("Tool")
-            obj.weaponLabel.Text = tool and tool.Name or "None"
-            obj.weaponLabel.Position = UDim2.new(0, screenHead.X - 50, 0, screenFoot.Y + 16)
-            obj.weaponLabel.Size = UDim2.new(0, 100, 0, 16)
-        else
-            obj.weaponLabel.Visible = false
-        end
-        
-        -- Healthbar
-        if settings.espHealthbar then
-            local healthPercent = hum.Health / hum.MaxHealth
-            local barHeight = height * healthPercent
-            local barX = x - 7
-            
-            obj.hpBg.Visible = true
-            obj.hpBg.Position = UDim2.new(0, barX, 0, screenFoot.Y)
-            obj.hpBg.Size = UDim2.new(0, 4, 0, height)
-            
-            obj.hpBar.Size = UDim2.new(0, 4, 0, barHeight)
-            obj.hpBar.Position = UDim2.new(0, 0, 1, -barHeight)
-            
-            if healthPercent > 0.6 then
-                obj.hpBar.BackgroundColor3 = Color3.new(0, 1, 0)
-            elseif healthPercent > 0.3 then
-                obj.hpBar.BackgroundColor3 = Color3.new(1, 0.8, 0)
-            else
-                obj.hpBar.BackgroundColor3 = Color3.new(1, 0, 0)
-            end
-        else
-            obj.hpBg.Visible = false
-        end
-    end
-end
-
--- ============================================
--- RAGEBOT (KẾT HỢP VOID SPAM + AIM)
+-- RAGEBOT
 -- ============================================
 local function startRagebot()
     if ragebotConn then ragebotConn:Disconnect() end
-    
     local target = nil
-    local voidState = "attack" -- attack hoặc hide
-    
+    local voidState = "attack"
     ragebotConn = RunService.Heartbeat:Connect(function()
         if not settings.ragebotEnabled then ragebotConn:Disconnect() return end
-        
-        -- Tìm mục tiêu
         local newTarget = findNearestTarget()
         if not newTarget then return end
         target = newTarget
-        
-        -- Ragebot Void Spam (ẩn rồi tấn công)
         if settings.ragebotVoidSpam then
             local char = LocalPlayer.Character
             if not char then return end
             local root = char:FindFirstChild("HumanoidRootPart")
             if not root then return end
-            
             if voidState == "attack" then
-                -- Tấn công: teleport gần mục tiêu và bắn
                 if target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
                     local targetPos = target.Character.HumanoidRootPart.Position
                     root.CFrame = CFrame.new(targetPos + Vector3.new(math.random(-5, 5), 2, math.random(-5, 5)))
@@ -515,27 +219,17 @@ local function startRagebot()
                 voidState = "hide"
                 task.wait(settings.voidSpamDelay)
             else
-                -- Ẩn: xuống void
                 root.CFrame = CFrame.new(root.Position.X, settings.voidDepth, root.Position.Z)
                 root.Velocity = Vector3.zero
                 voidState = "attack"
                 task.wait(settings.voidSpamDelay * 2)
             end
         end
-        
-        -- Auto shoot vào mục tiêu
         if target and target.Character then
             local targetPart = getRagebotTarget()
             if targetPart then
-                -- Gửi shoot command nếu có vũ khí
                 pcall(function()
-                    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-                    if remotes then
-                        local shootRemote = remotes:FindFirstChild("Shoot") or remotes:FindFirstChild("Fire")
-                        if shootRemote then
-                            shootRemote:FireServer(targetPart.Position)
-                        end
-                    end
+                    mouse1click()
                 end)
             end
         end
@@ -547,13 +241,12 @@ local function stopRagebot()
 end
 
 -- ============================================
--- AIMBOT SYSTEM
+-- AIMBOT
 -- ============================================
 local function getBestTarget()
     if not settings.aimbotEnabled then return nil end
     local best, bestDist = nil, settings.fovRadius
     local screenCenter = Camera.ViewportSize / 2
-    
     for _, p in ipairs(Players:GetPlayers()) do
         if p == LocalPlayer then continue end
         local char = p.Character
@@ -561,7 +254,6 @@ local function getBestTarget()
         local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
         local hum = char:FindFirstChild("Humanoid")
         if not head or not hum or hum.Health <= 0 then continue end
-        
         if settings.visibleOnly then
             local rayParams = RaycastParams.new()
             rayParams.FilterDescendantsInstances = {LocalPlayer.Character, char}
@@ -569,19 +261,16 @@ local function getBestTarget()
             local ray = workspace:Raycast(Camera.CFrame.Position, (head.Position - Camera.CFrame.Position).Unit * 1000, rayParams)
             if ray and ray.Instance and not ray.Instance:IsDescendantOf(char) then continue end
         end
-        
         local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
         if not onScreen then continue end
-        
         local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
         if dist < bestDist then bestDist = dist; best = p end
     end
-    
     return best
 end
 
 -- ============================================
--- NO SPREAD + SILENT AIM HOOK
+-- BYPASS DETECTION (NO SPREAD + SILENT AIM + ANTI AIM)
 -- ============================================
 local mt = getrawmetatable(game)
 local oldNamecall = mt.__namecall
@@ -589,7 +278,6 @@ setreadonly(mt, false)
 mt.__namecall = newcclosure(function(self, ...)
     local method = getnamecallmethod()
     local args = {...}
-    
     if method == "FireServer" then
         -- No Spread
         if settings.noSpread then
@@ -606,7 +294,6 @@ mt.__namecall = newcclosure(function(self, ...)
                 end
             end)
         end
-        
         -- Silent Aim
         if settings.silentAim and settings.aimbotEnabled then
             local target = getBestTarget()
@@ -629,9 +316,203 @@ mt.__namecall = newcclosure(function(self, ...)
             end
         end
     end
-    
     return oldNamecall(self, ...)
 end)
+
+-- ============================================
+-- BYPASS ANTI AIM (HOOK CAMERA)
+-- ============================================
+RunService.RenderStepped:Connect(function()
+    if settings.antiAimEnabled then
+        local cam = Camera
+        local cf = cam.CFrame
+        cf = cf * CFrame.Angles(0, math.rad(settings.antiAimYaw), 0)
+        if settings.antiAimPitch == "look down" then
+            cf = cf * CFrame.Angles(math.rad(89), 0, 0)
+        end
+        cam.CFrame = cf
+    end
+end)
+
+-- ============================================
+-- ESP SYSTEM
+-- ============================================
+local function createESP(player)
+    if espObjects[player] then return end
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ESP_" .. player.Name
+    gui.Parent = game:GetService("CoreGui")
+    
+    local boxOutline = Instance.new("Frame")
+    boxOutline.Name = "BoxOutline"
+    boxOutline.BorderSizePixel = 0
+    boxOutline.BackgroundColor3 = Color3.new(0, 0, 0)
+    boxOutline.Size = UDim2.new(0, 0, 0, 0)
+    boxOutline.Visible = false
+    boxOutline.Parent = gui
+    
+    local boxInner = Instance.new("Frame")
+    boxInner.Name = "BoxInner"
+    boxInner.BorderSizePixel = 0
+    boxInner.BackgroundColor3 = Color3.new(1, 1, 1)
+    boxInner.Size = UDim2.new(0, 0, 0, 0)
+    boxInner.Visible = false
+    boxInner.Parent = boxOutline
+    
+    local boxFill = Instance.new("Frame")
+    boxFill.Name = "BoxFill"
+    boxFill.BorderSizePixel = 0
+    boxFill.BackgroundColor3 = Color3.new(1, 1, 1)
+    boxFill.BackgroundTransparency = 0.85
+    boxFill.Size = UDim2.new(0, 0, 0, 0)
+    boxFill.Visible = false
+    boxFill.Parent = boxInner
+    
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "Name"
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextColor3 = Color3.new(1, 1, 1)
+    nameLabel.TextStrokeTransparency = 0.5
+    nameLabel.Font = Enum.Font.SourceSans
+    nameLabel.TextSize = 13
+    nameLabel.Visible = false
+    nameLabel.Parent = gui
+    
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Name = "Distance"
+    distLabel.BackgroundTransparency = 1
+    distLabel.TextColor3 = Color3.new(0.7, 0.8, 1)
+    distLabel.TextStrokeTransparency = 0.5
+    distLabel.Font = Enum.Font.SourceSans
+    distLabel.TextSize = 12
+    distLabel.Visible = false
+    distLabel.Parent = gui
+    
+    local weaponLabel = Instance.new("TextLabel")
+    weaponLabel.Name = "Weapon"
+    weaponLabel.BackgroundTransparency = 1
+    weaponLabel.TextColor3 = Color3.new(1, 0.8, 0)
+    weaponLabel.TextStrokeTransparency = 0.5
+    weaponLabel.Font = Enum.Font.SourceSans
+    weaponLabel.TextSize = 12
+    weaponLabel.Visible = false
+    weaponLabel.Parent = gui
+    
+    local hpBg = Instance.new("Frame")
+    hpBg.Name = "HPBg"
+    hpBg.BorderSizePixel = 0
+    hpBg.BackgroundColor3 = Color3.new(0.3, 0, 0)
+    hpBg.Size = UDim2.new(0, 0, 0, 0)
+    hpBg.Visible = false
+    hpBg.Parent = gui
+    
+    local hpBar = Instance.new("Frame")
+    hpBar.Name = "HPBar"
+    hpBar.BorderSizePixel = 0
+    hpBar.BackgroundColor3 = Color3.new(0, 1, 0)
+    hpBar.Size = UDim2.new(0, 0, 0, 0)
+    hpBar.Visible = false
+    hpBar.Parent = hpBg
+    
+    espObjects[player] = {
+        gui = gui, boxOutline = boxOutline, boxInner = boxInner, boxFill = boxFill,
+        nameLabel = nameLabel, distLabel = distLabel, weaponLabel = weaponLabel,
+        hpBg = hpBg, hpBar = hpBar
+    }
+end
+
+local function removeESP(player)
+    local obj = espObjects[player]
+    if obj then obj.gui:Destroy(); espObjects[player] = nil end
+end
+
+local function updateESP()
+    for player, obj in pairs(espObjects) do
+        local char = player.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then
+            obj.boxOutline.Visible = false; continue
+        end
+        if not settings.espShowTeam and player.Team == LocalPlayer.Team then
+            obj.boxOutline.Visible = false; continue
+        end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        local hum = char:FindFirstChild("Humanoid")
+        if not root or not hum or hum.Health <= 0 then
+            obj.boxOutline.Visible = false; continue
+        end
+        local headPos = head and head.Position or root.Position + Vector3.new(0, 2.5, 0)
+        local footPos = root.Position - Vector3.new(0, 3, 0)
+        local screenHead, onScreen = Camera:WorldToViewportPoint(headPos)
+        local screenFoot = Camera:WorldToViewportPoint(footPos)
+        if not onScreen then
+            obj.boxOutline.Visible = false; continue
+        end
+        local height = math.abs(screenFoot.Y - screenHead.Y)
+        local width = height * 0.65
+        local x = screenHead.X - width / 2
+        local y = screenHead.Y
+        
+        if settings.espBox then
+            obj.boxOutline.Visible = true
+            obj.boxOutline.Position = UDim2.new(0, x - 1, 0, y - 1)
+            obj.boxOutline.Size = UDim2.new(0, width + 2, 0, height + 2)
+            obj.boxInner.Size = UDim2.new(0, width + 2, 0, height + 2)
+            obj.boxFill.Size = UDim2.new(0, width, 0, height)
+            obj.boxFill.Visible = settings.espFill
+        else
+            obj.boxOutline.Visible = false
+        end
+        
+        if settings.espName then
+            obj.nameLabel.Visible = true
+            obj.nameLabel.Text = player.Name
+            obj.nameLabel.Position = UDim2.new(0, screenHead.X - 50, 0, y - 18)
+            obj.nameLabel.Size = UDim2.new(0, 100, 0, 16)
+        else
+            obj.nameLabel.Visible = false
+        end
+        
+        if settings.espDistance then
+            local myChar = LocalPlayer.Character
+            if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+                local dist = (myChar.HumanoidRootPart.Position - root.Position).Magnitude
+                obj.distLabel.Visible = true
+                obj.distLabel.Text = string.format("%.0f studs", dist)
+                obj.distLabel.Position = UDim2.new(0, screenHead.X - 50, 0, screenFoot.Y + 2)
+                obj.distLabel.Size = UDim2.new(0, 100, 0, 16)
+            end
+        else
+            obj.distLabel.Visible = false
+        end
+        
+        if settings.espWeapon then
+            obj.weaponLabel.Visible = true
+            local tool = char:FindFirstChildOfClass("Tool")
+            obj.weaponLabel.Text = tool and tool.Name or "None"
+            obj.weaponLabel.Position = UDim2.new(0, screenHead.X - 50, 0, screenFoot.Y + 16)
+            obj.weaponLabel.Size = UDim2.new(0, 100, 0, 16)
+        else
+            obj.weaponLabel.Visible = false
+        end
+        
+        if settings.espHealthbar then
+            local healthPercent = hum.Health / hum.MaxHealth
+            local barHeight = height * healthPercent
+            local barX = x - 7
+            obj.hpBg.Visible = true
+            obj.hpBg.Position = UDim2.new(0, barX, 0, screenFoot.Y)
+            obj.hpBg.Size = UDim2.new(0, 4, 0, height)
+            obj.hpBar.Size = UDim2.new(0, 4, 0, barHeight)
+            obj.hpBar.Position = UDim2.new(0, 0, 1, -barHeight)
+            if healthPercent > 0.6 then obj.hpBar.BackgroundColor3 = Color3.new(0, 1, 0)
+            elseif healthPercent > 0.3 then obj.hpBar.BackgroundColor3 = Color3.new(1, 0.8, 0)
+            else obj.hpBar.BackgroundColor3 = Color3.new(1, 0, 0) end
+        else
+            obj.hpBg.Visible = false
+        end
+    end
+end
 
 -- ============================================
 -- WORLD EFFECTS
@@ -661,7 +542,6 @@ local Window = Library:CreateWindow("UNNAMED NHAT")
 -- ============================================
 local CombatTab = Window:AddTab("Combat")
 
--- Targeting Groupbox
 local TargetingGroupbox = CombatTab:AddLeftGroupbox("Targeting")
 TargetingGroupbox:AddToggle("aimbot_toggle", { Text = "enabled", Default = false, Callback = function(v) settings.aimbotEnabled = v end })
 TargetingGroupbox:AddToggle("targeting_visibleonly", { Text = "visible only", Default = true, Callback = function(v) settings.visibleOnly = v end })
@@ -675,16 +555,9 @@ TargetingGroupbox:AddSlider("silent_hitchance", { Text = "hit chance", Min = 0, 
 TargetingGroupbox:AddToggle("silent_visualize", { Text = "visualize", Default = false })
 TargetingGroupbox:AddToggle("silent_manipulation", { Text = "manipulation", Default = false, Callback = function(v) settings.silentAim = v end })
 
--- Ragebot Groupbox
 local RagebotGroupbox = CombatTab:AddLeftGroupbox("Ragebot")
-RagebotGroupbox:AddDropdown("ragebot_priority_targets", {
-    Text = "priority", Values = {"Head", "Body", "Closest"}, Default = "Head",
-    Callback = function(v) settings.ragebotPriority = v end
-})
-RagebotGroupbox:AddSlider("ragebot_void_spam_hide", {
-    Text = "void spam delay", Min = 0, Max = 1, Default = 0.25, Rounding = 2, Suffix = "s",
-    Callback = function(v) settings.voidSpamDelay = v end
-})
+RagebotGroupbox:AddDropdown("ragebot_priority_targets", { Text = "priority", Values = {"Head", "Body", "Closest"}, Default = "Head", Callback = function(v) settings.ragebotPriority = v end })
+RagebotGroupbox:AddSlider("ragebot_void_spam_hide", { Text = "void spam delay", Min = 0, Max = 1, Default = 0.25, Rounding = 2, Suffix = "s", Callback = function(v) settings.voidSpamDelay = v end })
 RagebotGroupbox:AddToggle("void_enabled", { Text = "Void Spam", Default = false, Callback = function(v) settings.voidActive = v; if v then startVoidSpam() else stopVoidSpam() end end })
 RagebotGroupbox:AddSlider("void_depth", { Text = "Void Depth", Min = -1000000, Max = 0, Default = -670000, Rounding = 0, Callback = function(v) settings.voidDepth = v end })
 RagebotGroupbox:AddToggle("orbit_enabled", { Text = "Orbit", Default = false, Callback = function(v) settings.orbitActive = v; if v then startOrbit() else stopOrbit() end end })
@@ -694,18 +567,14 @@ RagebotGroupbox:AddToggle("headstomp_enabled", { Text = "Head Stomp", Default = 
 RagebotGroupbox:AddToggle("ragebot_enabled", { Text = "Ragebot", Default = false, Callback = function(v) settings.ragebotEnabled = v; if v then startRagebot() else stopRagebot() end end })
 RagebotGroupbox:AddToggle("ragebot_void_spam", { Text = "Ragebot Void Spam", Default = false, Callback = function(v) settings.ragebotVoidSpam = v end })
 
--- Triggerbot Groupbox
 local TriggerGroupbox = CombatTab:AddRightGroupbox("Triggerbot")
-TriggerGroupbox:AddToggle("triggerbot_enabled", {
-    Text = "enabled", Default = false,
+TriggerGroupbox:AddToggle("triggerbot_enabled", { Text = "enabled", Default = false,
     Callback = function(v)
         settings.triggerbotEnabled = v
         if v then
             if triggerConn then triggerConn:Disconnect() end
             triggerConn = RunService.Heartbeat:Connect(function()
-                if settings.triggerbotMode == "scoped only" then
-                    -- Kiểm tra nếu đang scope (tùy game)
-                end
+                if settings.triggerbotMode == "scoped only" then return end
                 local target = Mouse.Target
                 if target then
                     local model = target:FindFirstAncestorOfClass("Model")
@@ -725,19 +594,12 @@ TriggerGroupbox:AddToggle("triggerbot_enabled", {
         end
     end
 })
-TriggerGroupbox:AddDropdown("triggerbot_scoped", {
-    Text = "mode", Values = {"always", "scoped only"}, Default = "always",
-    Callback = function(v) settings.triggerbotMode = v end
-})
+TriggerGroupbox:AddDropdown("triggerbot_scoped", { Text = "mode", Values = {"always", "scoped only"}, Default = "always", Callback = function(v) settings.triggerbotMode = v end })
 
--- Anti Aim Groupbox
 local AntiAimGroupbox = CombatTab:AddRightGroupbox("Anti Aim")
 AntiAimGroupbox:AddToggle("anti_aim_enabled", { Text = "enabled", Default = false, Callback = function(v) settings.antiAimEnabled = v end })
 AntiAimGroupbox:AddSlider("anti_aim_custom_yaw", { Text = "yaw angle", Min = -180, Max = 180, Default = 0, Rounding = 0, Callback = function(v) settings.antiAimYaw = v end })
-AntiAimGroupbox:AddDropdown("anti_aim_pitch_mode", {
-    Text = "pitch mode", Values = {"none", "look down", "custom", "offset"}, Default = "none",
-    Callback = function(v) settings.antiAimPitch = v end
-})
+AntiAimGroupbox:AddDropdown("anti_aim_pitch_mode", { Text = "pitch mode", Values = {"none", "look down", "custom", "offset"}, Default = "none", Callback = function(v) settings.antiAimPitch = v end })
 
 -- ============================================
 -- VISUALS TAB
@@ -759,13 +621,6 @@ ESPGroupbox:AddDropdown("esp_world_font", { Text = "font", Values = {"Code", "Go
 ESPGroupbox:AddSlider("esp_bounds_width_scale", { Text = "width scale", Min = 0, Max = 200, Default = 100, Suffix = "%", Rounding = 0, Callback = function(v) settings.espBoundsWidthScale = v end })
 ESPGroupbox:AddSlider("esp_skeleton_thickness", { Text = "skeleton thickness", Min = 1, Max = 5, Default = 1, Rounding = 0, Callback = function(v) settings.espSkeletonThickness = v end })
 ESPGroupbox:AddSlider("esp_healthbar_health_lerp", { Text = "health lerp", Min = 0, Max = 1, Default = 0.1, Rounding = 2, Callback = function(v) settings.espHealthbarLerp = v end })
-ESPGroupbox:AddSlider("esp_world_object_scale", { Text = "object scale", Min = 0.5, Max = 3, Default = 1, Rounding = 1, Callback = function(v) settings.espObjectScale = v end })
-
-local CrosshairGroupbox = VisualsTab:AddRightGroupbox("Crosshair")
-CrosshairGroupbox:AddDropdown("crosshair_settings", { Text = "settings", Values = {"default", "custom"}, Default = "default" })
-
-local IndicatorsGroupbox = VisualsTab:AddRightGroupbox("Indicators")
-IndicatorsGroupbox:AddSlider("indicator_lerp", { Text = "lerp", Min = 0, Max = 1, Default = 0.1, Rounding = 2 })
 
 -- ============================================
 -- WORLD TAB
@@ -798,8 +653,7 @@ SunGroupbox:AddSlider("sunrays_spread", { Text = "spread", Min = 0, Max = 1, Def
 SunGroupbox:AddSlider("sunrays_intensity", { Text = "intensity", Min = 0, Max = 1, Default = 0.25, Rounding = 2, Callback = function(v) settings.sunraysIntensity = v; SunRaysEffect.Intensity = v end })
 
 local LightingGroupbox = WorldTab:AddRightGroupbox("Lighting")
-LightingGroupbox:AddDropdown("lighting_technology", {
-    Text = "technology", Values = {"ShadowMap", "Future", "Legacy"}, Default = "ShadowMap",
+LightingGroupbox:AddDropdown("lighting_technology", { Text = "technology", Values = {"ShadowMap", "Future", "Legacy"}, Default = "ShadowMap",
     Callback = function(v)
         settings.lightingTechnology = v
         pcall(function()
@@ -815,17 +669,22 @@ LightingGroupbox:AddDropdown("lighting_technology", {
 -- ============================================
 local SettingsTab = Window:AddTab("Settings")
 local SettingsGroupbox = SettingsTab:AddLeftGroupbox("Menu")
-SettingsGroupbox:AddDropdown("Keybind Menu Mode", { Text = "keybind mode", Values = {"Always", "Toggle", "Hold"}, Default = "Always" })
-SettingsGroupbox:AddLabel("🔥 UNNAMED NHAT - FULL FEATURES", false)
-SettingsGroupbox:AddLabel("👣 NHAT ON TOP", false)
+SettingsGroupbox:AddDropdown("keybind_mode", { Text = "keybind mode", Values = {"Always", "Toggle", "Hold"}, Default = "Always", Callback = function(v) settings.keybindMode = v end })
+SettingsGroupbox:AddLabel("🔥 UNNAMED NHAT - BY NHAT 👣", false)
+SettingsGroupbox:AddLabel("✅ Save/Load Config + Bypass Detection", false)
 
+-- ============================================
+-- SAVE MANAGER
+-- ============================================
 SaveManager:SetLibrary(Library)
 SaveManager:SetFolder("unnamed_nhat/settings")
 SaveManager:IgnoreThemeSettings()
 
+-- ============================================
+-- THEME MANAGER
+-- ============================================
 ThemeManager:SetLibrary(Library)
 ThemeManager:SetFolder("unnamed_nhat/themes")
-ThemeManager:ApplyToTab(SettingsTab)
 
 -- ============================================
 -- ESP UPDATE LOOP
@@ -858,8 +717,13 @@ end)
 -- SHIFT PHẢI BẬT/TẮT MENU
 -- ============================================
 Library.ToggleKeybind = { Type = "KeyPicker", Value = "RightShift", Mode = "Toggle" }
+
+-- Tự động show menu
 Library:Toggle()
 
+-- ============================================
+-- GIỮ TRẠNG THÁI KHI CHẾT
+-- ============================================
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
     if settings.voidActive then stopVoidSpam() task.wait(0.1) startVoidSpam() end
@@ -868,5 +732,7 @@ LocalPlayer.CharacterAdded:Connect(function()
     if settings.ragebotEnabled then stopRagebot() task.wait(0.1) startRagebot() end
 end)
 
-print("🔥 UNNAMED NHAT - FULL FEATURES LOADED!")
-print("✅ Ragebot + Triggerbot + Anti Aim + ESP + World Effects")
+-- Tự động load config
+SaveManager:LoadAutoloadConfig()
+
+print("🔥 UNNAMED NHAT")
