@@ -7,18 +7,14 @@ repeat
     local _char = _lp and _lp.Character
     local _hrp = _char and _char:FindFirstChild("HumanoidRootPart")
     local _scripts = _lp and _lp:FindFirstChild("PlayerScripts")
-    local _controllers = _scripts and _scripts:FindFirstChild("Controllers", true)
-    if game:IsLoaded() and _hrp and _controllers and (tick() - _startTime) > 5 then
-        break
-    end
+    local _ctrl = _scripts and _scripts:FindFirstChild("Controllers", true)
+    if game:IsLoaded() and _hrp and _ctrl and (tick() - _startTime) > 5 then break end
 until false
 task.wait(2)
 
 local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua'))()
 local SaveManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua'))()
-SaveManager.LoadAutoloadConfig = function(self)
-    -- disabled: causes SetValueRGB crash
-end
+SaveManager.LoadAutoloadConfig = function() end
 local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua'))()
 
 local Players = game:GetService("Players")
@@ -108,6 +104,10 @@ local State = {
         skeleton = {},
     },
     running = {},
+    drawings = {
+        silent = {},
+        aimbot = {},
+    },
 }
 
 local BloomEffect = Instance.new("BloomEffect")
@@ -757,7 +757,6 @@ local b = function(R)
 local M = function(R)
 		local T = R[0]
 		return function()
-			if not Toggles.atmosphere_enabled then return end
 			T.Parent = Toggles.atmosphere_enabled.Value and game:GetService("Lighting") or nil
 			if not T.Parent then
 				return
@@ -4885,28 +4884,28 @@ local function initialize(Library)
     local atmo_update = M({ [0] = AtmosphereEffect })
     local sun_update = S({ [0] = SunRaysEffect, [1] = SunRaysDefaults })
 
-    Toggles.bloom_enabled:OnChanged(bloom_update)
-    Options.bloom_intensity:OnChanged(bloom_update)
-    Options.bloom_size:OnChanged(bloom_update)
-    Options.bloom_threshold:OnChanged(bloom_update)
+    pcall(function() if Toggles.bloom_enabled then Toggles.bloom_enabled:OnChanged(bloom_update) end end)
+    pcall(function() if Options.bloom_intensity then Options.bloom_intensity:OnChanged(bloom_update) end end)
+    pcall(function() if Options.bloom_size then Options.bloom_size:OnChanged(bloom_update) end end)
+    pcall(function() if Options.bloom_threshold then Options.bloom_threshold:OnChanged(bloom_update) end end)
 
-    Toggles.color_correction_enabled:OnChanged(cc_update)
-    Options.color_correction_saturation:OnChanged(cc_update)
-    Options.color_correction_contrast:OnChanged(cc_update)
-    Options.color_correction_brightness:OnChanged(cc_update)
-    Options.color_correction_tint:OnChanged(cc_update)
+    pcall(function() if Toggles.color_correction_enabled then Toggles.color_correction_enabled:OnChanged(cc_update) end end)
+    pcall(function() if Options.color_correction_saturation then Options.color_correction_saturation:OnChanged(cc_update) end end)
+    pcall(function() if Options.color_correction_contrast then Options.color_correction_contrast:OnChanged(cc_update) end end)
+    pcall(function() if Options.color_correction_brightness then Options.color_correction_brightness:OnChanged(cc_update) end end)
+    pcall(function() if Options.color_correction_tint then Options.color_correction_tint:OnChanged(cc_update) end end)
 
-    Toggles.atmosphere_enabled:OnChanged(atmo_update)
-    Options.atmosphere_decay:OnChanged(atmo_update)
-    Options.atmosphere_glare:OnChanged(atmo_update)
-    Options.atmosphere_haze:OnChanged(atmo_update)
-    Options.atmosphere_density:OnChanged(atmo_update)
-    Options.atmosphere_offset:OnChanged(atmo_update)
-    Options.atmosphere_color:OnChanged(atmo_update)
+    pcall(function() if Toggles.atmosphere_enabled then Toggles.atmosphere_enabled:OnChanged(atmo_update) end end)
+    pcall(function() if Options.atmosphere_decay then Options.atmosphere_decay:OnChanged(atmo_update) end end)
+    pcall(function() if Options.atmosphere_glare then Options.atmosphere_glare:OnChanged(atmo_update) end end)
+    pcall(function() if Options.atmosphere_haze then Options.atmosphere_haze:OnChanged(atmo_update) end end)
+    pcall(function() if Options.atmosphere_density then Options.atmosphere_density:OnChanged(atmo_update) end end)
+    pcall(function() if Options.atmosphere_offset then Options.atmosphere_offset:OnChanged(atmo_update) end end)
+    pcall(function() if Options.atmosphere_color then Options.atmosphere_color:OnChanged(atmo_update) end end)
 
-    Toggles.sunrays_enabled:OnChanged(sun_update)
-    Options.sunrays_spread:OnChanged(sun_update)
-    Options.sunrays_intensity:OnChanged(sun_update)
+    pcall(function() if Toggles.sunrays_enabled then Toggles.sunrays_enabled:OnChanged(sun_update) end end)
+    pcall(function() if Options.sunrays_spread then Options.sunrays_spread:OnChanged(sun_update) end end)
+    pcall(function() if Options.sunrays_intensity then Options.sunrays_intensity:OnChanged(sun_update) end end)
 
     Options.lighting_technology:OnChanged(function()
         pcall(function()
@@ -4923,8 +4922,6 @@ local function initialize(Library)
 
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        or ReplicatedStorage:WaitForChild("Remotes", 10)
-        or ReplicatedStorage:FindFirstChild("Remotes", true)
     local RivalsModules = {}
 
     local origGetRawMetatable = clonefunction and clonefunction(getrawmetatable) or getrawmetatable
@@ -4944,20 +4941,8 @@ local function initialize(Library)
             end
         end
     end)
-    if not localFighter then
-        pcall(function()
-            if getgc then
-                for _, v in pairs(getgc(true)) do
-                    if type(v) == "table" and rawget(v, "ClientFighter") then
-                        localFighter = v
-                        break
-                    end
-                end
-            end
-        end)
-    end
     State.localFighter = localFighter
-    warn("[UE] localFighter found: " .. tostring(localFighter ~= nil))
+    warn("[UE] localFighter: " .. tostring(localFighter ~= nil))
 
     pcall(function()
         local viewmodelsModule = ReplicatedStorage:FindFirstChild("ViewModels", true)
@@ -5051,7 +5036,23 @@ local function initialize(Library)
 
     pcall(installMetatableHook)
 
-    if localFighter and RivalsModules.CameraController then
+    -- Anti-aim: find CameraController even without localFighter
+    pcall(function()
+        if not RivalsModules.CameraController then
+            local RS = game:GetService("ReplicatedStorage")
+            for _, obj in ipairs(RS:GetDescendants()) do
+                if obj:IsA("ModuleScript") and obj.Name:lower():find("camera") then
+                    local ok, mod = pcall(require, obj)
+                    if ok and type(mod) == "table" and mod.EncodeCameraRotation then
+                        RivalsModules.CameraController = mod
+                        break
+                    end
+                end
+            end
+        end
+    end)
+
+    if RivalsModules.CameraController then
         pcall(function()
             local origEncode = RivalsModules.CameraController.EncodeCameraRotation
             if origEncode then
@@ -5117,7 +5118,7 @@ local function initialize(Library)
     Toggles.aimbot_toggle:OnChanged(function()
         if not Toggles.aimbot_toggle.Value then
             silentCircle.Visible = false
-            State.manipulation.targetPosition = nil
+            if State.manipulation then State.manipulation.targetPosition = nil end
         end
     end)
 
@@ -5222,24 +5223,12 @@ local function initialize(Library)
         end)
     end)
 
-    State.manipulation = State.manipulation or {}
-    State.manipulation.active = false
-    State.manipulation.targetPosition = nil
-
-    -- Init raycastParams if not already set
-    if not State.raycastParams then
-        State.raycastParams = RaycastParams.new()
-        State.raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-        State.raycastParams.FilterDescendantsInstances = {LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()}
-    end
+    State.manipulation = { active = false, targetPosition = nil }
 
     State.raycastParams = RaycastParams.new()
     State.raycastParams.FilterType = Enum.RaycastFilterType.Exclude
     State.raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
     LocalPlayer.CharacterAdded:Connect(function(char)
-        if State.raycastParams then
-            State.raycastParams.FilterDescendantsInstances = {char}
-        end
         State.raycastParams.FilterDescendantsInstances = {char}
     end)
 
