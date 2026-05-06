@@ -750,12 +750,15 @@ local M = function(R)
 			if not T.Parent then
 				return
 			end
-			T.Color = Options.atmosphere_color.Value
-			T.Decay = Options.atmosphere_decay.Value
-			T.Glare = Options.atmosphere_glare.Value
-			T.Haze = Options.atmosphere_haze.Value
-			T.Density = Options.atmosphere_density.Value
-			T.Offset = Options.atmosphere_offset.Value
+			pcall(function()
+				local col = Options.atmosphere_color and Options.atmosphere_color.Value
+				if typeof(col) == "Color3" then T.Color = col end
+			end)
+			pcall(function() T.Decay   = Options.atmosphere_decay.Value   end)
+			pcall(function() T.Glare   = Options.atmosphere_glare.Value   end)
+			pcall(function() T.Haze    = Options.atmosphere_haze.Value    end)
+			pcall(function() T.Density = Options.atmosphere_density.Value end)
+			pcall(function() T.Offset  = Options.atmosphere_offset.Value  end)
 		end
 	end
 
@@ -4501,8 +4504,10 @@ local k = function(R)
 							return { type = "ColorPicker", idx = F, value = A.Value:ToHex(), transparency = A.Transparency }
 						end,
 						Load = function(F, A)
-							if q[F] then
-								q[F]:SetValueRGB(Color3.fromHex(A.value), A.transparency)
+							if q[F] and q[F].SetValueRGB then
+								pcall(function()
+									q[F]:SetValueRGB(Color3.fromHex(A.value), A.transparency)
+								end)
 							end
 						end,
 					},
@@ -5282,6 +5287,27 @@ local function initialize(Library)
     Players.PlayerAdded:Connect(function(p) task.wait(1); pcall(createESP, p) end)
     Players.PlayerRemoving:Connect(removeESP)
 
+    -- Cache weapon names, cập nhật mỗi 1.5s thay vì mỗi frame
+    local weaponCache = {}
+    task.spawn(function()
+        while true do
+            task.wait(1.5)
+            pcall(function()
+                for _, v in pairs(getgc(true)) do
+                    if type(v) == "table" then
+                        local pl = rawget(v, "Player")
+                        local item = rawget(v, "EquippedItem")
+                        if pl and item and type(pl) == "userdata" then
+                            pcall(function()
+                                weaponCache[pl] = item.Name or "none"
+                            end)
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+
     RunService.RenderStepped:Connect(function()
         local showBox    = Toggles.esp_box      and Toggles.esp_box.Value
         local showFill   = Toggles.esp_fill     and Toggles.esp_fill.Value
@@ -5376,19 +5402,11 @@ local function initialize(Library)
                 drawings.name.Visible = false
             end
 
-            -- Weapon
+            -- Weapon (dùng cache, không getgc mỗi frame)
             local weaponName = ""
             if showWeapon then
-                pcall(function()
-                    for _, v in pairs(getgc(true)) do
-                        if type(v) == "table" and rawget(v, "Player") == player and rawget(v, "EquippedItem") then
-                            local item = rawget(v, "EquippedItem")
-                            if item and item.Name then weaponName = item.Name end
-                            break
-                        end
-                    end
-                end)
-                drawings.weapon.Text     = weaponName ~= "" and weaponName or "none"
+                weaponName = weaponCache[player] or "none"
+                drawings.weapon.Text     = weaponName
                 drawings.weapon.Position = Vector2.new(cx, topY + boxH + 2)
                 drawings.weapon.Visible  = true
             else
