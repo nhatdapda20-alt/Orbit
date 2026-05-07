@@ -4926,7 +4926,6 @@ local function initialize(Library)
     end
 
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
     local RivalsModules = {}
 
     local origGetRawMetatable = clonefunction and clonefunction(getrawmetatable) or getrawmetatable
@@ -4936,24 +4935,34 @@ local function initialize(Library)
     local localFighter = nil
     local localPlayerData = nil
 
+    -- Tìm localFighter với nhiều key hơn
     pcall(function()
         for _, v in pairs(getgc(true)) do
-            if type(v) == "table" and rawget(v, "ClientFighter") and rawget(v, "IsLocalPlayer") then
-                localFighter = v
-                break
+            if type(v) == "table" then
+                local cf = rawget(v, "ClientFighter")
+                local il = rawget(v, "IsLocalPlayer")
+                local pl = rawget(v, "Player")
+                if cf and (il or pl == LocalPlayer) then
+                    localFighter = v
+                    break
+                end
             end
         end
     end)
 
-    -- Fallback: retry sau 2s nếu chưa tìm được
+    -- Fallback: retry sau 2s
     if not localFighter then
         task.delay(2, function()
             pcall(function()
                 for _, v in pairs(getgc(true)) do
-                    if type(v) == "table" and rawget(v, "ClientFighter") and rawget(v, "IsLocalPlayer") then
-                        localFighter = v
-                        State.localFighter = localFighter
-                        break
+                    if type(v) == "table" then
+                        local cf = rawget(v, "ClientFighter")
+                        local il = rawget(v, "IsLocalPlayer")
+                        local pl = rawget(v, "Player")
+                        if cf and (il or pl == LocalPlayer) then
+                            localFighter = v
+                            State.localFighter = localFighter
+                        end
                     end
                 end
             end)
@@ -4962,19 +4971,23 @@ local function initialize(Library)
 
     State.localFighter = localFighter
 
-    pcall(function()
-        local viewmodelsModule = ReplicatedStorage:FindFirstChild("ViewModels", true)
-            or ReplicatedStorage:FindFirstChild("Shared", true)
-        if viewmodelsModule then
-            RivalsModules.ViewModels = cloneref(require(viewmodelsModule))
-        end
-    end)
+    -- Tìm Remotes folder (thử nhiều tên)
+    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        or ReplicatedStorage:FindFirstChild("Events")
+        or ReplicatedStorage:FindFirstChild("RemoteEvents")
 
+    -- Nếu không tìm thấy, scan tất cả RemoteEvent trong ReplicatedStorage
+    local RemoteSet = {}
     pcall(function()
-        local camModule = ReplicatedStorage:FindFirstChild("CameraController", true)
-        if camModule then
-            RivalsModules.CameraController = require(camModule)
+        local function scanRemotes(parent)
+            for _, v in ipairs(parent:GetChildren()) do
+                if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+                    RemoteSet[v.Name] = v
+                end
+                pcall(scanRemotes, v)
+            end
         end
+        scanRemotes(ReplicatedStorage)
     end)
 
     if Remotes then
@@ -4986,52 +4999,60 @@ local function initialize(Library)
         if not origMt then return end
 
         local origNamecall = origMt.__namecall
-        local origIndex = origMt.__index
+        local origIndex    = origMt.__index
         local origNewIndex = origMt.__newindex
 
         local proxyMt = {}
-        proxyMt.__index = origIndex
+        proxyMt.__index    = origIndex
+        proxyMt.__newindex = origNewIndex  -- KHÔNG block newindex nữa
+
+        -- Tên remote phổ biến trong các game Rivals-style
+        local SHOOT_REMOTES = {
+            Shoot=true, Fire=true, ShootGun=true, FireGun=true,
+            ReplicateFromServer=true, Attack=true, UseAbility=true,
+            FireProjectile=true, ShootProjectile=true, Combat=true,
+        }
 
         proxyMt.__namecall = origNewCClosure(function(self, ...)
             local method = getnamecallmethod()
             local args = {...}
 
-            if method == "FireServer" and self.Name and Remotes and self:IsDescendantOf(Remotes) then
-                local remoteName = self.Name
+            if method == "FireServer" then
+                local ok, isRemote = pcall(function()
+                    return self:IsA("RemoteEvent") or self:IsA("RemoteFunction")
+                end)
+                if ok and isRemote then
+                    local remoteName = self.Name
 
-                if remoteName == "ReplicateFromServer" or remoteName == "Shoot" or remoteName == "Fire" then
+                    -- No spread: áp dụng cho mọi remote bắn
                     if Toggles.exploits_no_spread and Toggles.exploits_no_spread.Value then
                         pcall(function()
-                            for _, arg in args do
+                            for _, arg in ipairs(args) do
                                 if type(arg) == "table" then
                                     if arg._ProjectileEffect then
-                                        arg._ProjectileEffect.Spread = Vector3.zero
+                                        arg._ProjectileEffect.Spread      = Vector3.zero
                                         arg._ProjectileEffect.SpreadAngle = 0
                                     end
-                                    if arg.Spread then
-                                        arg.Spread = Vector3.zero
-                                    end
-                                    if arg.SpreadAngle then
-                                        arg.SpreadAngle = 0
-                                    end
+                                    if arg.Spread      then arg.Spread      = Vector3.zero end
+                                    if arg.SpreadAngle then arg.SpreadAngle = 0 end
+                                    if arg.spread      then arg.spread      = 0 end
                                 end
                             end
                         end)
                     end
 
-                    if Toggles.silent_manipulation and Toggles.silent_manipulation.Value then
+                    -- Silent aim: redirect direction
+                    if Toggles.silent_manipulation and Toggles.silent_manipulation.Value
+                    and State.manipulation.targetPosition then
                         pcall(function()
-                            if State.manipulation.targetPosition then
-                                for _, arg in args do
-                                    if type(arg) == "table" then
-                                        if arg.Direction then
-                                            local cam = workspace.CurrentCamera
-                                            arg.Direction = (State.manipulation.targetPosition - cam.CFrame.Position).Unit
-                                        end
-                                        if arg.Origin then
-                                            arg.Origin = workspace.CurrentCamera.CFrame.Position
-                                        end
-                                    end
+                            local cam = workspace.CurrentCamera
+                            local dir = (State.manipulation.targetPosition - cam.CFrame.Position).Unit
+                            for _, arg in ipairs(args) do
+                                if type(arg) == "table" then
+                                    if arg.Direction ~= nil then arg.Direction = dir end
+                                    if arg.direction ~= nil then arg.direction = dir end
+                                    if arg.Origin   ~= nil then arg.Origin = cam.CFrame.Position end
+                                    if arg.origin   ~= nil then arg.origin = cam.CFrame.Position end
                                 end
                             end
                         end)
@@ -5042,10 +5063,6 @@ local function initialize(Library)
             return origNamecall(self, ...)
         end)
 
-        proxyMt.__newindex = origNewCClosure(function(self, key, value)
-            return
-        end)
-
         local setRawMt = setrawmetatable or (debug and debug.setmetatable)
         if setRawMt then
             setRawMt(game, proxyMt)
@@ -5054,8 +5071,32 @@ local function initialize(Library)
 
     pcall(installMetatableHook)
 
-    if localFighter and RivalsModules.CameraController then
-        pcall(function()
+    -- Anti-aim via RunService (không cần localFighter hay CameraController)
+    RunService.RenderStepped:Connect(function()
+        if not (Toggles.anti_aim_enabled and Toggles.anti_aim_enabled.Value) then return end
+        local yaw = Options.anti_aim_custom_yaw and Options.anti_aim_custom_yaw.Value or 0
+        local pitchMode = Options.anti_aim_pitch_mode and Options.anti_aim_pitch_mode.Value or "none"
+        local cam = workspace.CurrentCamera
+        local _, y, _ = cam.CFrame:ToEulerAnglesYXZ()
+        local fakeYaw = y + math.rad(yaw)
+        local fakePitch = 0
+        if pitchMode == "look down" then
+            fakePitch = math.rad(89)
+        elseif pitchMode == "custom" then
+            fakePitch = math.rad(Options.anti_aim_custom_pitch and Options.anti_aim_custom_pitch.Value or 0)
+        end
+        -- Inject fake rotation via FireServer hook (set manipulation angles for next shot)
+        State.manipulation.antiAimYaw   = fakeYaw
+        State.manipulation.antiAimPitch = fakePitch
+    end)
+
+    -- Thử hook CameraController nếu có
+    pcall(function()
+        local camModule = ReplicatedStorage:FindFirstChild("CameraController", true)
+        if camModule then
+            RivalsModules.CameraController = require(camModule)
+        end
+        if RivalsModules.CameraController then
             local origEncode = RivalsModules.CameraController.EncodeCameraRotation
             if origEncode then
                 RivalsModules.CameraController.EncodeCameraRotation = function(self, ...)
@@ -5064,23 +5105,20 @@ local function initialize(Library)
                         local pitchMode = Options.anti_aim_pitch_mode and Options.anti_aim_pitch_mode.Value or "none"
                         local cam = workspace.CurrentCamera
                         local cf = cam.CFrame
-
                         cf = cf * CFrame.Angles(0, math.rad(yaw), 0)
-
                         if pitchMode == "look down" then
                             cf = cf * CFrame.Angles(math.rad(89), 0, 0)
                         elseif pitchMode == "custom" then
                             local pitch = Options.anti_aim_custom_pitch and Options.anti_aim_custom_pitch.Value or 0
                             cf = cf * CFrame.Angles(math.rad(pitch), 0, 0)
                         end
-
                         return origEncode(self, cf)
                     end
                     return origEncode(self, ...)
                 end
             end
-        end)
-    end
+        end
+    end)
 
     local silentCircle = Drawing.new("Circle")
     silentCircle.Visible = false
@@ -5188,16 +5226,6 @@ local function initialize(Library)
         if not Toggles.triggerbot_enabled.Value then return end
 
         triggerConn = RunService.Heartbeat:Connect(function()
-            if not localFighter then return end
-            local equipped = pcall(function() return localFighter.EquippedItem end) and localFighter.EquippedItem
-            if not equipped then return end
-
-            local scopedMode = Options.triggerbot_scoped.Value
-            if scopedMode == "scoped only" then
-                local isAiming = pcall(function() return localFighter.IsAiming end) and localFighter.IsAiming
-                if not isAiming then return end
-            end
-
             local mouseTarget = LocalPlayer:GetMouse().Target
             if not mouseTarget then return end
             local model = mouseTarget:FindFirstAncestorOfClass("Model")
@@ -5207,21 +5235,63 @@ local function initialize(Library)
             local player = Players:GetPlayerFromCharacter(model)
             if not player or player == LocalPlayer then return end
 
+            -- Thử localFighter method trước
             pcall(function()
-                if equipped.shoot then equipped:shoot() end
+                if localFighter and localFighter.EquippedItem then
+                    local eq = localFighter.EquippedItem
+                    if eq.shoot then eq:shoot()
+                    elseif eq.Fire then eq:Fire()
+                    elseif eq.Attack then eq:Attack()
+                    end
+                end
+            end)
+
+            -- Fallback: tìm trong getgc
+            pcall(function()
+                if not (localFighter and localFighter.EquippedItem) then
+                    for _, v in pairs(getgc(true)) do
+                        if type(v) == "table" and rawget(v, "Player") == LocalPlayer then
+                            local item = rawget(v, "EquippedItem")
+                            if item then
+                                if item.shoot then item:shoot()
+                                elseif item.Fire then item:Fire()
+                                end
+                                break
+                            end
+                        end
+                    end
+                end
             end)
         end)
     end)
 
+    -- Full auto: patch FireMode liên tục
+    local fullAutoConn = nil
     Toggles.exploits_full_auto:OnChanged(function()
-        pcall(function()
-            if not localFighter or not localFighter.EquippedItem then return end
-            local weapon = localFighter.EquippedItem
-            if weapon.Info and weapon.Info.Type == "Gun" then
-                if Toggles.exploits_full_auto.Value then
-                    weapon.Info.FireMode = "Auto"
+        if fullAutoConn then fullAutoConn:Disconnect(); fullAutoConn = nil end
+        if not Toggles.exploits_full_auto.Value then return end
+
+        fullAutoConn = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                -- Thử localFighter
+                if localFighter and localFighter.EquippedItem then
+                    local w = localFighter.EquippedItem
+                    if w.Info then w.Info.FireMode = "Auto" end
+                    if w.FireMode ~= nil then w.FireMode = "Auto" end
+                    return
                 end
-            end
+                -- Fallback getgc
+                for _, v in pairs(getgc(true)) do
+                    if type(v) == "table" and rawget(v, "Player") == LocalPlayer then
+                        local item = rawget(v, "EquippedItem")
+                        if item then
+                            if rawget(item, "Info") then item.Info.FireMode = "Auto" end
+                            if rawget(item, "FireMode") ~= nil then item.FireMode = "Auto" end
+                            break
+                        end
+                    end
+                end
+            end)
         end)
     end)
 
