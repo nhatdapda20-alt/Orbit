@@ -5017,6 +5017,10 @@ local function initialize(Library)
     TargetingGroupbox:AddToggle("exploits_full_auto", { Text = "full auto", Default = false })
     TargetingGroupbox:AddToggle("aimbot_fov_outline", { Text = "show fov", Default = false })
         :AddColorPicker("aimbot_outline_color1", { Default = Color3.new(1, 1, 1) })
+        :AddColorPicker("aimbot_outline_color2", { Default = Color3.new(1, 0.4, 0.8) })
+    TargetingGroupbox:AddToggle("aimbot_fov_fill", { Text = "fill", Default = false })
+        :AddColorPicker("aimbot_fill_color1", { Default = Color3.new(1, 0.4, 0.8) })
+        :AddColorPicker("aimbot_fill_color2", { Default = Color3.new(0, 0, 0) })
     TargetingGroupbox:AddToggle("aimbot_fov_moving", { Text = "fov rotation", Default = false })
     TargetingGroupbox:AddSlider("aimbot_fov_rotation_speed", { Text = "rotation speed", Min = 0, Max = 5, Default = 1, Rounding = 2 })
     TargetingGroupbox:AddSlider("silent_radius", { Text = "radius", Min = 0, Max = 500, Default = 100, Suffix = "px", Rounding = 0 })
@@ -5119,7 +5123,16 @@ local function initialize(Library)
     CameraGroupbox:AddSlider("camera_aspect_ratio_y", { Text = "ratio y", Min = 0.1, Max = 3, Default = 1, Rounding = 2 })
 
     local AnimGroupbox = MiscTab:AddLeftGroupbox("Animations")
-    AnimGroupbox:AddDropdown("animation_player_value", { Text = "animation", Values = {"default"}, Default = "default" })
+    AnimGroupbox:AddToggle("animation_player_enabled", { Text = "enabled", Default = false })
+        :AddKeyPicker("animation_player_keybind", { Default = "None", Mode = "Toggle", Text = "animation player" })
+    AnimGroupbox:AddDropdown("animation_player_value", { Text = "animation", Values = {
+        "default", "solar system", "front flip", "back flip",
+        "wave", "dab", "tilt", "splits", "breakdance"
+    }, Default = "default" })
+    AnimGroupbox:AddInput("animation_player_custom_id", { Text = "custom animation", Default = "", Placeholder = "id... (ex: 4049646104)" })
+    AnimGroupbox:AddSlider("animation_player_speed", { Text = "speed", Min = 0.1, Max = 20, Default = 10, Rounding = 1 })
+    AnimGroupbox:AddSlider("animation_player_start", { Text = "start", Min = 0, Max = 100, Default = 0, Suffix = "%", Rounding = 0 })
+    AnimGroupbox:AddSlider("animation_player_end", { Text = "end", Min = 0, Max = 100, Default = 100, Suffix = "%", Rounding = 0 })
 
     local ViewmodelGroupbox = MiscTab:AddLeftGroupbox("Viewmodel")
     ViewmodelGroupbox:AddToggle("viewmodel_offset", { Text = "offset", Default = false })
@@ -5383,23 +5396,15 @@ local function initialize(Library)
 
     pcall(installMetatableHook)
 
-    -- Anti-aim via RunService (không cần localFighter hay CameraController)
-    RunService.RenderStepped:Connect(function()
+    -- Anti-aim: chỉ track state, không loop nặng
+    RunService.Heartbeat:Connect(function()
         if not (Toggles.anti_aim_enabled and Toggles.anti_aim_enabled.Value) then return end
         local yaw = Options.anti_aim_custom_yaw and Options.anti_aim_custom_yaw.Value or 0
         local pitchMode = Options.anti_aim_pitch_mode and Options.anti_aim_pitch_mode.Value or "none"
-        local cam = workspace.CurrentCamera
-        local _, y, _ = cam.CFrame:ToEulerAnglesYXZ()
-        local fakeYaw = y + math.rad(yaw)
-        local fakePitch = 0
-        if pitchMode == "look down" then
-            fakePitch = math.rad(89)
-        elseif pitchMode == "custom" then
-            fakePitch = math.rad(Options.anti_aim_custom_pitch and Options.anti_aim_custom_pitch.Value or 0)
-        end
-        -- Inject fake rotation via FireServer hook (set manipulation angles for next shot)
-        State.manipulation.antiAimYaw   = fakeYaw
-        State.manipulation.antiAimPitch = fakePitch
+        State.manipulation.antiAimYaw   = math.rad(yaw)
+        State.manipulation.antiAimPitch = pitchMode == "look down" and math.rad(89)
+            or pitchMode == "custom" and math.rad(Options.anti_aim_custom_pitch and Options.anti_aim_custom_pitch.Value or 0)
+            or 0
     end)
 
     -- Thử hook CameraController nếu có
@@ -5445,10 +5450,20 @@ local function initialize(Library)
     aimbotCircle.Visible = false
     aimbotCircle.Radius = 100
     aimbotCircle.Color = Color3.new(1, 1, 1)
-    aimbotCircle.Thickness = 1
+    aimbotCircle.Thickness = 1.5
     aimbotCircle.Filled = false
     aimbotCircle.Transparency = 1
     State.drawings.aimbot.circle = aimbotCircle
+
+    -- Fill circle cho aimbot
+    local aimbotFillCircle = Drawing.new("Circle")
+    aimbotFillCircle.Visible = false
+    aimbotFillCircle.Radius = 100
+    aimbotFillCircle.Color = Color3.fromRGB(255, 100, 200)
+    aimbotFillCircle.Thickness = 1
+    aimbotFillCircle.Filled = true
+    aimbotFillCircle.Transparency = 0.7
+    State.drawings.aimbot.fill = aimbotFillCircle
 
     Toggles.silent_visualize:OnChanged(function()
         silentCircle.Visible = Toggles.silent_visualize.Value and Toggles.aimbot_toggle.Value
@@ -5465,24 +5480,137 @@ local function initialize(Library)
     Options.aimbot_outline_color1:OnChanged(function()
         aimbotCircle.Color = Options.aimbot_outline_color1.Value
     end)
+    Toggles.aimbot_fov_fill:OnChanged(function()
+        aimbotFillCircle.Visible = Toggles.aimbot_fov_fill.Value
+    end)
+    Options.aimbot_fill_color1:OnChanged(function()
+        aimbotFillCircle.Color = Options.aimbot_fill_color1.Value
+    end)
+    Options.aimbot_fill_color2:OnChanged(function()
+        aimbotFillCircle.Transparency = Options.aimbot_fill_color2.Transparency or 0.7
+    end)
     Options.aimbot_fov_rotation_speed:OnChanged(function() end)
 
     Toggles.aimbot_toggle:OnChanged(function()
         if not Toggles.aimbot_toggle.Value then
             silentCircle.Visible = false
+            aimbotFillCircle.Visible = false
             State.manipulation.targetPosition = nil
+        end
+    end)
+
+    -- ── Animation Player ─────────────────────────────────────
+    local ANIM_IDS = {
+        ["default"]     = nil,
+        ["solar system"]= "rbxassetid://4049646104",
+        ["front flip"]  = "rbxassetid://7715238843",
+        ["back flip"]   = "rbxassetid://7715238843",
+        ["wave"]        = "rbxassetid://507770239",
+        ["dab"]         = "rbxassetid://507770239",
+        ["tilt"]        = "rbxassetid://507770239",
+        ["splits"]      = "rbxassetid://507770239",
+        ["breakdance"]  = "rbxassetid://182435998",
+    }
+
+    local currentAnimTrack = nil
+    local currentAnimObj   = nil
+
+    local function stopAnim()
+        if currentAnimTrack then
+            pcall(function() currentAnimTrack:Stop() end)
+            currentAnimTrack = nil
+        end
+        if currentAnimObj then
+            pcall(function() currentAnimObj:Destroy() end)
+            currentAnimObj = nil
+        end
+    end
+
+    local function playAnim()
+        stopAnim()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local animator = hum and hum:FindFirstChildOfClass("Animator")
+        if not animator then return end
+
+        local customId = Options.animation_player_custom_id and Options.animation_player_custom_id.Value
+        local selected = Options.animation_player_value and Options.animation_player_value.Value or "default"
+        local animId = (customId and customId ~= "") and ("rbxassetid://" .. customId:gsub("rbxassetid://",""))
+                    or ANIM_IDS[selected]
+
+        if not animId then return end
+
+        local anim = Instance.new("Animation")
+        anim.AnimationId = animId
+        currentAnimObj = anim
+
+        local ok, track = pcall(function() return animator:LoadAnimation(anim) end)
+        if not ok or not track then return end
+
+        local speed = Options.animation_player_speed and Options.animation_player_speed.Value or 10
+        local startPct = (Options.animation_player_start and Options.animation_player_start.Value or 0) / 100
+        local endPct   = (Options.animation_player_end   and Options.animation_player_end.Value   or 100) / 100
+
+        track:Play()
+        track:AdjustSpeed(speed)
+        pcall(function()
+            track.TimePosition = track.Length * startPct
+        end)
+        currentAnimTrack = track
+
+        -- Stop ở điểm end
+        if endPct < 1 then
+            task.spawn(function()
+                while currentAnimTrack == track and track.IsPlaying do
+                    if track.TimePosition >= track.Length * endPct then
+                        track.TimePosition = track.Length * startPct
+                    end
+                    task.wait()
+                end
+            end)
+        end
+    end
+
+    Toggles.animation_player_enabled:OnChanged(function()
+        if Toggles.animation_player_enabled.Value then
+            playAnim()
+        else
+            stopAnim()
+        end
+    end)
+
+    Options.animation_player_value:OnChanged(function()
+        if Toggles.animation_player_enabled and Toggles.animation_player_enabled.Value then
+            playAnim()
+        end
+    end)
+
+    Options.animation_player_speed:OnChanged(function()
+        if currentAnimTrack then
+            pcall(function()
+                currentAnimTrack:AdjustSpeed(Options.animation_player_speed.Value)
+            end)
+        end
+    end)
+
+    LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(1)
+        if Toggles.animation_player_enabled and Toggles.animation_player_enabled.Value then
+            playAnim()
         end
     end)
 
     RunService.RenderStepped:Connect(function()
         local screenCenter = workspace.CurrentCamera.ViewportSize / 2
-        silentCircle.Position = screenCenter
-        aimbotCircle.Position = screenCenter
+        silentCircle.Position    = screenCenter
+        aimbotCircle.Position    = screenCenter
+        aimbotFillCircle.Position = screenCenter
 
-        if Toggles.aimbot_fov_moving.Value then
-            local speed = Options.aimbot_fov_rotation_speed.Value
-            aimbotCircle.NumSides = 60
-        end
+        -- Sync radius
+        local r = Options.silent_radius and Options.silent_radius.Value or 100
+        aimbotCircle.Radius    = r
+        aimbotFillCircle.Radius = r
 
         if Toggles.aimbot_toggle.Value and Options.aimbot_keybind:GetState() then
             local closestPlayer = nil
@@ -5547,7 +5675,6 @@ local function initialize(Library)
             local player = Players:GetPlayerFromCharacter(model)
             if not player or player == LocalPlayer then return end
 
-            -- Thử localFighter method trước
             pcall(function()
                 if localFighter and localFighter.EquippedItem then
                     local eq = localFighter.EquippedItem
@@ -5555,21 +5682,14 @@ local function initialize(Library)
                     elseif eq.Fire then eq:Fire()
                     elseif eq.Attack then eq:Attack()
                     end
-                end
-            end)
-
-            -- Fallback: tìm trong getgc
-            pcall(function()
-                if not (localFighter and localFighter.EquippedItem) then
-                    for _, v in pairs(getgc(true)) do
-                        if type(v) == "table" and rawget(v, "Player") == LocalPlayer then
-                            local item = rawget(v, "EquippedItem")
-                            if item then
-                                if item.shoot then item:shoot()
-                                elseif item.Fire then item:Fire()
-                                end
-                                break
-                            end
+                else
+                    -- Dùng Tool trong character thay vì getgc
+                    local char = LocalPlayer.Character
+                    if char then
+                        local tool = char:FindFirstChildOfClass("Tool")
+                        if tool then
+                            local fire = tool:FindFirstChild("Fire") or tool:FindFirstChild("shoot")
+                            if fire then pcall(function() fire:Invoke() end) end
                         end
                     end
                 end
@@ -5585,23 +5705,10 @@ local function initialize(Library)
 
         fullAutoConn = RunService.Heartbeat:Connect(function()
             pcall(function()
-                -- Thử localFighter
                 if localFighter and localFighter.EquippedItem then
                     local w = localFighter.EquippedItem
                     if w.Info then w.Info.FireMode = "Auto" end
-                    if w.FireMode ~= nil then w.FireMode = "Auto" end
-                    return
-                end
-                -- Fallback getgc
-                for _, v in pairs(getgc(true)) do
-                    if type(v) == "table" and rawget(v, "Player") == LocalPlayer then
-                        local item = rawget(v, "EquippedItem")
-                        if item then
-                            if rawget(item, "Info") then item.Info.FireMode = "Auto" end
-                            if rawget(item, "FireMode") ~= nil then item.FireMode = "Auto" end
-                            break
-                        end
-                    end
+                    if rawget(w, "FireMode") ~= nil then w.FireMode = "Auto" end
                 end
             end)
         end)
@@ -5669,25 +5776,29 @@ local function initialize(Library)
     Players.PlayerAdded:Connect(function(p) task.wait(1); pcall(createESP, p) end)
     Players.PlayerRemoving:Connect(removeESP)
 
-    -- Cache weapon names, cập nhật mỗi 3s và chỉ khi toggle bật
+    -- Cache weapon từ Character (không dùng getgc - quá nặng)
     local weaponCache = {}
     task.spawn(function()
         while true do
-            task.wait(3)
+            task.wait(2)
             if not (Toggles.esp_weapon and Toggles.esp_weapon.Value) then continue end
-            pcall(function()
-                for _, v in pairs(getgc(true)) do
-                    if type(v) == "table" then
-                        local pl = rawget(v, "Player")
-                        local item = rawget(v, "EquippedItem")
-                        if pl and item and type(pl) == "userdata" then
-                            pcall(function()
-                                weaponCache[pl] = item.Name or "none"
-                            end)
-                        end
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
+                pcall(function()
+                    local char = player.Character
+                    if not char then weaponCache[player] = nil; return end
+                    -- Tìm tool trong character
+                    local tool = char:FindFirstChildOfClass("Tool")
+                    if tool then
+                        weaponCache[player] = tool.Name
+                    else
+                        -- Tìm trong backpack nếu chưa equip
+                        local bp = player:FindFirstChildOfClass("Backpack")
+                        local bpTool = bp and bp:FindFirstChildOfClass("Tool")
+                        weaponCache[player] = bpTool and bpTool.Name or nil
                     end
-                end
-            end)
+                end)
+            end
         end
     end)
 
