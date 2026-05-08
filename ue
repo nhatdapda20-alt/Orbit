@@ -2040,13 +2040,13 @@ local r = function(R)
 					for d, Z in next, m or R do
 						if d:find("Color") then
 							self.Library[d] = Color3.fromHex(Z)
-							if q[d] then
-								q[d]:SetValueRGB(Color3.fromHex(Z))
+							if q[d] and type(q[d]) == "table" and q[d].SetValueRGB then
+								pcall(function() q[d]:SetValueRGB(Color3.fromHex(Z)) end)
 							end
 						else
 							self.Library[d] = Z
-							if q[d] then
-								q[d]:SetValue(Z)
+							if q[d] and type(q[d]) == "table" and q[d].SetValue then
+								pcall(function() q[d]:SetValue(Z) end)
 							end
 						end
 					end
@@ -4875,6 +4875,36 @@ local function initialize(Library)
     SaveManager:SetFolder("unnamed/rivals")
     SaveManager:IgnoreThemeSettings()
     SaveManager:BuildConfigSection(SettingsTab)
+
+    -- Fix: xóa autoload config cũ bị lỗi (lưu atmosphere_color sai kiểu)
+    pcall(function()
+        local folder = "unnamed/rivals/settings"
+        local autoloadFile = folder .. "/autoload.txt"
+        if isfile and isfile(autoloadFile) then
+            local autoloadName = readfile(autoloadFile)
+            local configFile = folder .. "/" .. autoloadName .. ".json"
+            if isfile(configFile) then
+                local ok, data = pcall(function()
+                    return game:GetService("HttpService"):JSONDecode(readfile(configFile))
+                end)
+                if ok and data and data.objects then
+                    local needsFix = false
+                    for _, obj in ipairs(data.objects) do
+                        -- Nếu atmosphere_color được lưu kiểu Slider (number) thay vì ColorPicker (hex string)
+                        if obj.idx == "atmosphere_color" and obj.type ~= "ColorPicker" then
+                            needsFix = true
+                            break
+                        end
+                    end
+                    if needsFix then
+                        pcall(delfile, configFile)
+                        pcall(delfile, autoloadFile)
+                        warn("[UE] Config cũ bị lỗi, đã xóa để reset.")
+                    end
+                end
+            end
+        end
+    end)
 
     ThemeManager:SetLibrary(Library)
     ThemeManager:SetFolder("unnamed/themes")
