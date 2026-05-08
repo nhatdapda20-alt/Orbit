@@ -4586,7 +4586,7 @@ local k = function(R)
 					writefile(F, g)
 					return true
 				end
-				function T:Load(R)
+					function T:Load(R)
 					if not R then
 						return false, "no config file is selected"
 					end
@@ -4594,7 +4594,7 @@ local k = function(R)
 						for q, q in next, R.objects do
 							if self.Parser[q.type] then
 								task.spawn(function()
-									self.Parser[q.type].Load(q.idx, q)
+									pcall(function() self.Parser[q.type].Load(q.idx, q) end)
 								end)
 							end
 						end
@@ -4612,7 +4612,7 @@ local k = function(R)
 					for R, R in next, g.objects do
 						if self.Parser[R.type] then
 							task.spawn(function()
-								self.Parser[R.type].Load(R.idx, R)
+								pcall(function() self.Parser[R.type].Load(R.idx, R) end)
 							end)
 						end
 					end
@@ -4876,33 +4876,27 @@ local function initialize(Library)
     SaveManager:IgnoreThemeSettings()
     SaveManager:BuildConfigSection(SettingsTab)
 
-    -- Fix: xóa autoload config cũ bị lỗi (lưu atmosphere_color sai kiểu)
+    -- Xóa config cũ bị lỗi (atmosphere_color lưu sai kiểu)
     pcall(function()
         local folder = "unnamed/rivals/settings"
-        local autoloadFile = folder .. "/autoload.txt"
-        if isfile and isfile(autoloadFile) then
-            local autoloadName = readfile(autoloadFile)
-            local configFile = folder .. "/" .. autoloadName .. ".json"
-            if isfile(configFile) then
-                local ok, data = pcall(function()
-                    return game:GetService("HttpService"):JSONDecode(readfile(configFile))
-                end)
-                if ok and data and data.objects then
-                    local needsFix = false
-                    for _, obj in ipairs(data.objects) do
-                        -- Nếu atmosphere_color được lưu kiểu Slider (number) thay vì ColorPicker (hex string)
-                        if obj.idx == "atmosphere_color" and obj.type ~= "ColorPicker" then
-                            needsFix = true
-                            break
-                        end
-                    end
-                    if needsFix then
-                        pcall(delfile, configFile)
-                        pcall(delfile, autoloadFile)
-                        warn("[UE] Config cũ bị lỗi, đã xóa để reset.")
-                    end
-                end
+        local autoFile = folder .. "/autoload.txt"
+        if not (isfile and isfile(autoFile)) then return end
+        local name = readfile(autoFile):gsub("%s","")
+        local cfg = folder .. "/" .. name .. ".json"
+        if not isfile(cfg) then return end
+        local ok, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(readfile(cfg))
+        end)
+        if not ok or not data or not data.objects then return end
+        local bad = false
+        for _, o in ipairs(data.objects) do
+            if o.idx == "atmosphere_color" and o.type ~= "ColorPicker" then
+                bad = true; break
             end
+        end
+        if bad then
+            pcall(delfile, cfg)
+            pcall(delfile, autoFile)
         end
     end)
 
