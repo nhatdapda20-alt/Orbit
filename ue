@@ -5054,7 +5054,11 @@ local function initialize(Library)
     ESPGroupbox:AddToggle("esp_distance", { Text = "distance", Default = false })
     ESPGroupbox:AddToggle("esp_weapon", { Text = "weapon", Default = false })
     ESPGroupbox:AddToggle("esp_box", { Text = "box", Default = false })
+        :AddColorPicker("esp_box_color1", { Default = Color3.new(1, 0, 0) })
+        :AddColorPicker("esp_box_color2", { Default = Color3.new(0, 0, 0) })
     ESPGroupbox:AddToggle("esp_fill", { Text = "fill", Default = false })
+        :AddColorPicker("esp_fill_color1", { Default = Color3.new(1, 0, 0) })
+        :AddColorPicker("esp_fill_color2", { Default = Color3.new(0, 0, 0) })
     ESPGroupbox:AddToggle("esp_skeleton", { Text = "skeleton", Default = false })
     ESPGroupbox:AddToggle("esp_healthbar", { Text = "healthbar", Default = false })
     ESPGroupbox:AddToggle("esp_show_team", { Text = "show team", Default = false })
@@ -5127,7 +5131,7 @@ local function initialize(Library)
         :AddKeyPicker("animation_player_keybind", { Default = "None", Mode = "Toggle", Text = "animation player" })
     AnimGroupbox:AddDropdown("animation_player_value", { Text = "animation", Values = {
         "default", "solar system", "front flip", "back flip",
-        "wave", "dab", "tilt", "splits", "breakdance"
+        "wave", "dab", "tilt", "splits", "breakdance", "body spin"
     }, Default = "default" })
     AnimGroupbox:AddInput("animation_player_custom_id", { Text = "custom animation", Default = "", Placeholder = "id... (ex: 4049646104)" })
     AnimGroupbox:AddSlider("animation_player_speed", { Text = "speed", Min = 0.1, Max = 20, Default = 10, Rounding = 1 })
@@ -5526,6 +5530,59 @@ local function initialize(Library)
         end
     end
 
+    -- Body Spin
+    local bodySpinActive = false
+    local bodySpinConns = {}
+
+    local function stopBodySpin()
+        bodySpinActive = false
+        for _, c in ipairs(bodySpinConns) do pcall(function() c:Disconnect() end) end
+        bodySpinConns = {}
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("Motor6D") then p.Enabled = true end
+        end
+    end
+
+    local function startBodySpin()
+        stopBodySpin()
+        local char = LocalPlayer.Character
+        if not char then return end
+        bodySpinActive = true
+        local spinParts = {"Head","LeftUpperArm","RightUpperArm","LeftUpperLeg","RightUpperLeg","UpperTorso","LowerTorso"}
+        local offsets = {
+            Head=Vector3.new(0,3,0), LeftUpperArm=Vector3.new(-3,1,0), RightUpperArm=Vector3.new(3,1,0),
+            LeftUpperLeg=Vector3.new(-1.5,-2,0), RightUpperLeg=Vector3.new(1.5,-2,0),
+            UpperTorso=Vector3.new(0,0,0), LowerTorso=Vector3.new(0,-1,0),
+        }
+        local angles = {}
+        for _, name in ipairs(spinParts) do angles[name] = math.random()*math.pi*2 end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("Motor6D") then p.Enabled = false end
+        end
+        local conn = game:GetService("RunService").RenderStepped:Connect(function(dt)
+            if not bodySpinActive then return end
+            local c2 = LocalPlayer.Character
+            if not c2 then return end
+            local root = c2:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            local rCF = root.CFrame
+            for _, name in ipairs(spinParts) do
+                local part = c2:FindFirstChild(name)
+                if part and part:IsA("BasePart") then
+                    angles[name] = (angles[name] or 0) + dt * 4
+                    local off = offsets[name] or Vector3.new(0,0,0)
+                    local d = Vector3.new(off.X,0,off.Z).Magnitude + 1.5
+                    local x = math.cos(angles[name]) * d
+                    local z = math.sin(angles[name]) * d
+                    part.CFrame = rCF * CFrame.new(x, off.Y, z) * CFrame.Angles(angles[name], angles[name]*0.7, 0)
+                end
+            end
+        end)
+        table.insert(bodySpinConns, conn)
+    end
+
     local function playAnim()
         stopAnim()
         local char = LocalPlayer.Character
@@ -5538,6 +5595,11 @@ local function initialize(Library)
         local selected = Options.animation_player_value and Options.animation_player_value.Value or "default"
         local animId = (customId and customId ~= "") and ("rbxassetid://" .. customId:gsub("rbxassetid://",""))
                     or ANIM_IDS[selected]
+
+        if selected == "body spin" then
+            startBodySpin()
+            return
+        end
 
         if not animId then return end
 
@@ -5577,6 +5639,7 @@ local function initialize(Library)
             playAnim()
         else
             stopAnim()
+            stopBodySpin()
         end
     end)
 
