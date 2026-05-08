@@ -5034,8 +5034,14 @@ local function initialize(Library)
     TargetingGroupbox:AddToggle("selected_player_view", { Text = "selected player view", Default = false })
 
     local RagebotGroupbox = CombatTab:AddLeftGroupbox("Ragebot")
+    RagebotGroupbox:AddToggle("ragebot_enabled", { Text = "enabled", Default = false })
+        :AddKeyPicker("ragebot_keybind", { Default = "None", Mode = "Toggle", Text = "ragebot" })
+    RagebotGroupbox:AddToggle("ragebot_void_spam", { Text = "void spam", Default = false })
+    RagebotGroupbox:AddSlider("ragebot_void_spam_hide", { Text = "hide delay", Min = 0.01, Max = 1, Default = 0.07, Rounding = 2, Suffix = "s" })
+    RagebotGroupbox:AddSlider("ragebot_attack_delay", { Text = "attack delay", Min = 0.01, Max = 1, Default = 0.05, Rounding = 2, Suffix = "s" })
+    RagebotGroupbox:AddToggle("ragebot_always_backstab", { Text = "always backstab", Default = false })
+    RagebotGroupbox:AddSlider("ragebot_firerate", { Text = "firerate", Min = 1, Max = 100, Default = 10, Rounding = 0, Suffix = "%" })
     RagebotGroupbox:AddDropdown("ragebot_priority_targets", { Text = "priority", Values = {"Head", "Body", "Closest"}, Default = "Head" })
-    RagebotGroupbox:AddSlider("ragebot_void_spam_hide", { Text = "void spam delay", Min = 0, Max = 1, Default = 0.25, Rounding = 2, Suffix = "s" })
     RagebotGroupbox:AddToggle("indicator_ragebot", { Text = "ragebot indicator", Default = false })
         :AddColorPicker("indicator_ragebot_status_color", { Default = Color3.fromRGB(255, 100, 100) })
         :AddColorPicker("indicator_ragebot_text_color", { Default = Color3.fromRGB(255, 255, 255) })
@@ -5506,12 +5512,12 @@ local function initialize(Library)
     -- ── Animation Player ─────────────────────────────────────
     local ANIM_IDS = {
         ["default"]     = nil,
-        ["solar system"]= "rbxassetid://4049646104",
-        ["front flip"]  = "rbxassetid://7715238843",
-        ["back flip"]   = "rbxassetid://7715238843",
+        ["solar system"]= "rbxassetid://616064005",
+        ["front flip"]  = "rbxassetid://754610312",
+        ["back flip"]   = "rbxassetid://754614534",
         ["wave"]        = "rbxassetid://507770239",
-        ["dab"]         = "rbxassetid://507770239",
-        ["tilt"]        = "rbxassetid://507770239",
+        ["dab"]         = "rbxassetid://508409693",
+        ["tilt"]        = "rbxassetid://507779680",
         ["splits"]      = "rbxassetid://507770239",
         ["breakdance"]  = "rbxassetid://182435998",
     }
@@ -5984,6 +5990,243 @@ local function initialize(Library)
     -- ================================================================
     -- KẾT THÚC ESP LOOP
     -- ================================================================
+
+
+    -- ================================================================
+    -- RAGEBOT + VOID SPAM (rewritten)
+    -- ================================================================
+
+    local rageActive = false
+    local voidActive = false
+    local rageConn = nil
+    local voidConn = nil
+    local backstabConn = nil
+
+    -- Tìm target gần camera nhất
+    local function getTarget()
+        local cam = workspace.CurrentCamera
+        local priority = Options.ragebot_priority_targets and Options.ragebot_priority_targets.Value or "Head"
+        local bestDist = math.huge
+        local bestPart = nil
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            local char = player.Character
+            if not char then continue end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+
+            local part
+            if priority == "Head" then
+                part = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+            elseif priority == "Body" then
+                part = char:FindFirstChild("HumanoidRootPart")
+            else
+                local best, bd = nil, math.huge
+                for _, p in ipairs(char:GetChildren()) do
+                    if p:IsA("BasePart") then
+                        local d = (cam.CFrame.Position - p.Position).Magnitude
+                        if d < bd then bd = d; best = p end
+                    end
+                end
+                part = best
+            end
+
+            if not part then continue end
+            local d = (cam.CFrame.Position - part.Position).Magnitude
+            if d < bestDist then bestDist = d; bestPart = part end
+        end
+
+        return bestPart
+    end
+
+    -- RAGE: tele HRP server-side lên đầu địch, camera giữ nguyên
+    local function doRage()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local targetPart = getTarget()
+        if not targetPart then return end
+
+        -- Lưu camera CFrame để không bị ảnh hưởng
+        local cam = workspace.CurrentCamera
+        local camCF = cam.CFrame
+        local camMode = cam.CameraType
+
+        -- Tele HRP lên đầu địch (server thấy mình ở đó, client thấy bth)
+        local targetCF = CFrame.new(targetPart.Position + Vector3.new(0, 3, 0))
+
+        -- Disable camera lock tạm thời
+        cam.CameraType = Enum.CameraType.Scriptable
+        cam.CFrame = camCF -- giữ nguyên góc nhìn
+
+        -- Tele server-side
+        hrp.CFrame = targetCF
+
+        -- Set silent aim target
+        State.manipulation.targetPosition = targetPart.Position
+
+        -- Restore camera ngay lập tức
+        task.defer(function()
+            cam.CameraType = camMode
+        end)
+    end
+
+    -- VOID SPAM: HRP bay loạn xạ, địch không lock được
+    local function startVoidSpam()
+        if voidConn then voidConn:Disconnect(); voidConn = nil end
+        if not voidActive then return end
+
+        local voidPositions = {
+            Vector3.new(0, 1000, 0),
+            Vector3.new(1000, 0, 0),
+            Vector3.new(-1000, 0, 0),
+            Vector3.new(0, -1000, 0),
+            Vector3.new(500, 500, 500),
+            Vector3.new(-500, 500, -500),
+        }
+        local voidIdx = 0
+
+        voidConn = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not voidActive then return end
+                local char = LocalPlayer.Character
+                if not char then return end
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                local cam = workspace.CurrentCamera
+                local camCF = cam.CFrame
+
+                -- Bay đến vị trí random
+                voidIdx = (voidIdx % #voidPositions) + 1
+                local offset = voidPositions[voidIdx]
+                hrp.CFrame = CFrame.new(hrp.Position + offset)
+
+                -- Giữ camera
+                cam.CameraType = Enum.CameraType.Scriptable
+                cam.CFrame = camCF
+                task.defer(function()
+                    cam.CameraType = Enum.CameraType.Custom
+                end)
+            end)
+            task.wait(0.05)
+        end)
+    end
+
+    -- RAGE loop: tele lên đầu địch, nếu bị hit thì void 5s rồi tele lại
+    local rageLoopRunning = false
+    local function startRageLoop()
+        if rageLoopRunning then return end
+        rageLoopRunning = true
+
+        task.spawn(function()
+            while rageActive do
+                -- Tele lên đầu địch
+                pcall(doRage)
+
+                -- Giữ ở đó để bắn
+                local shootTime = Options.ragebot_attack_delay and Options.ragebot_attack_delay.Value or 0.05
+                task.wait(shootTime)
+
+                -- Void spam ngắn để tránh bị hit lại
+                if Toggles.ragebot_void_spam and Toggles.ragebot_void_spam.Value then
+                    voidActive = true
+                    startVoidSpam()
+                    task.wait(5) -- void 5 giây
+                    voidActive = false
+                    if voidConn then voidConn:Disconnect(); voidConn = nil end
+
+                    -- Restore character về vị trí bình thường
+                    pcall(function()
+                        local char = LocalPlayer.Character
+                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            local cam = workspace.CurrentCamera
+                            hrp.CFrame = CFrame.new(cam.CFrame.Position - Vector3.new(0, 3, 0))
+                        end
+                    end)
+
+                    task.wait(0.5)
+                else
+                    task.wait(0.1)
+                end
+
+                if not rageActive then break end
+            end
+            rageLoopRunning = false
+        end)
+    end
+
+    -- Backstab: xoay lưng về phía target
+    local function startBackstab()
+        if backstabConn then backstabConn:Disconnect(); backstabConn = nil end
+        if not (Toggles.ragebot_always_backstab and Toggles.ragebot_always_backstab.Value) then return end
+
+        backstabConn = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not (Toggles.ragebot_always_backstab and Toggles.ragebot_always_backstab.Value) then return end
+                local targetPart = getTarget()
+                if not targetPart then return end
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+                local dir = (targetPart.Position - hrp.Position)
+                dir = Vector3.new(dir.X, 0, dir.Z).Unit
+                hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + dir) * CFrame.Angles(0, math.pi, 0)
+            end)
+        end)
+    end
+
+    -- Firerate
+    local firerateConn = nil
+    local function startFirerate()
+        if firerateConn then firerateConn:Disconnect(); firerateConn = nil end
+        if not (Toggles.ragebot_enabled and Toggles.ragebot_enabled.Value) then return end
+        firerateConn = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                local mult = Options.ragebot_firerate and Options.ragebot_firerate.Value or 10
+                if localFighter and localFighter.EquippedItem then
+                    local w = localFighter.EquippedItem
+                    if w.Info then w.Info.Firerate = math.max(0.01, 0.5 / (mult / 10)) end
+                end
+            end)
+        end)
+    end
+
+    -- OnChanged handlers
+    if Toggles.ragebot_enabled then
+        Toggles.ragebot_enabled:OnChanged(function()
+            rageActive = Toggles.ragebot_enabled.Value
+            if rageActive then
+                startRageLoop()
+                startFirerate()
+            else
+                rageActive = false
+                voidActive = false
+                if voidConn then voidConn:Disconnect(); voidConn = nil end
+                if firerateConn then firerateConn:Disconnect(); firerateConn = nil end
+                -- Restore camera
+                pcall(function()
+                    workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+                end)
+            end
+        end)
+    end
+
+    if Toggles.ragebot_always_backstab then
+        Toggles.ragebot_always_backstab:OnChanged(startBackstab)
+    end
+
+    if Options.ragebot_firerate then
+        Options.ragebot_firerate:OnChanged(function()
+            if Toggles.ragebot_enabled and Toggles.ragebot_enabled.Value then
+                startFirerate()
+            end
+        end)
+    end
 
     SaveManager:LoadAutoloadConfig()
 
