@@ -242,6 +242,42 @@ local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/violi
 local SaveManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua'))()
 local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua'))()
 
+-- Patch ThemeManager: chặn SetValueRGB crash khi load theme cũ
+pcall(function()
+    for _, obj in pairs(getgc(true)) do
+        if type(obj) == "table" and rawget(obj, "LoadTheme") then
+            local orig = rawget(obj, "LoadTheme")
+            rawset(obj, "LoadTheme", function(self, ...)
+                local ok, err = pcall(orig, self, ...)
+                if not ok then
+                    warn("[UE] Theme load lỗi (bỏ qua): " .. tostring(err))
+                end
+            end)
+            break
+        end
+    end
+end)
+
+-- Patch SaveManager Load: wrap mọi Parser call trong pcall
+pcall(function()
+    for _, obj in pairs(getgc(true)) do
+        if type(obj) == "table" and rawget(obj, "Parser") then
+            local parser = rawget(obj, "Parser")
+            if parser and type(parser) == "table" then
+                for ptype, ptable in pairs(parser) do
+                    if type(ptable) == "table" and ptable.Load then
+                        local origLoad = ptable.Load
+                        ptable.Load = function(...)
+                            pcall(origLoad, ...)
+                        end
+                    end
+                end
+            end
+            break
+        end
+    end
+end)
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -5109,27 +5145,34 @@ local function initialize(Library)
     SaveManager:IgnoreThemeSettings()
     SaveManager:BuildConfigSection(SettingsTab)
 
-    -- Xóa config cũ bị lỗi (atmosphere_color lưu sai kiểu)
+    -- Xóa theme cũ bị lỗi + config lưu atmosphere_color sai kiểu
     pcall(function()
-        local folder = "unnamed/rivals/settings"
-        local autoFile = folder .. "/autoload.txt"
-        if not (isfile and isfile(autoFile)) then return end
-        local name = readfile(autoFile):gsub("%s","")
-        local cfg = folder .. "/" .. name .. ".json"
-        if not isfile(cfg) then return end
-        local ok, data = pcall(function()
-            return game:GetService("HttpService"):JSONDecode(readfile(cfg))
-        end)
-        if not ok or not data or not data.objects then return end
-        local bad = false
-        for _, o in ipairs(data.objects) do
-            if o.idx == "atmosphere_color" and o.type ~= "ColorPicker" then
-                bad = true; break
-            end
+        local HttpSvc = game:GetService("HttpService")
+        -- Xóa theme autoload nếu có (gây SetValueRGB crash)
+        local themeAuto = "unnamed/themes/autoload.txt"
+        if isfile and isfile(themeAuto) then
+            pcall(delfile, themeAuto)
         end
-        if bad then
-            pcall(delfile, cfg)
-            pcall(delfile, autoFile)
+        -- Xóa config autoload nếu lưu atmosphere_color sai kiểu
+        local cfgFolder = "unnamed/rivals/settings"
+        local cfgAuto   = cfgFolder .. "/autoload.txt"
+        if isfile and isfile(cfgAuto) then
+            local name = readfile(cfgAuto):gsub("%s","")
+            local cfgFile = cfgFolder .. "/" .. name .. ".json"
+            if isfile(cfgFile) then
+                local ok, data = pcall(function()
+                    return HttpSvc:JSONDecode(readfile(cfgFile))
+                end)
+                if ok and data and data.objects then
+                    for _, o in ipairs(data.objects) do
+                        if o.idx == "atmosphere_color" and o.type ~= "ColorPicker" then
+                            pcall(delfile, cfgFile)
+                            pcall(delfile, cfgAuto)
+                            break
+                        end
+                    end
+                end
+            end
         end
     end)
 
@@ -5161,7 +5204,6 @@ local function initialize(Library)
     Options.atmosphere_haze:OnChanged(atmo_update)
     Options.atmosphere_density:OnChanged(atmo_update)
     Options.atmosphere_offset:OnChanged(atmo_update)
-    Options.atmosphere_color:OnChanged(atmo_update)
 
     Toggles.sunrays_enabled:OnChanged(sun_update)
     Options.sunrays_spread:OnChanged(sun_update)
@@ -5279,9 +5321,8 @@ local function initialize(Library)
                     return self:IsA("RemoteEvent") or self:IsA("RemoteFunction")
                 end)
                 if ok and isRemote then
-                    local remoteName = self.Name
 
-                    -- No spread: áp dụng cho mọi remote bắn
+                    -- No spread: patch tất cả các key spread trong args
                     if Toggles.exploits_no_spread and Toggles.exploits_no_spread.Value then
                         pcall(function()
                             for _, arg in ipairs(args) do
@@ -5290,28 +5331,42 @@ local function initialize(Library)
                                         arg._ProjectileEffect.Spread      = Vector3.zero
                                         arg._ProjectileEffect.SpreadAngle = 0
                                     end
-                                    if arg.Spread      then arg.Spread      = Vector3.zero end
-                                    if arg.SpreadAngle then arg.SpreadAngle = 0 end
-                                    if arg.spread      then arg.spread      = 0 end
+                                    for _, k in ipairs({"Spread","SpreadAngle","spread","spreadAngle","accuracy","Accuracy"}) do
+                                        if arg[k] ~= nil then arg[k] = 0 end
+                                    end
                                 end
                             end
                         end)
                     end
 
-                    -- Silent aim: redirect direction
+                    -- Silent aim: tạm thời đổi camera CFrame về hướng target
                     if Toggles.silent_manipulation and Toggles.silent_manipulation.Value
                     and State.manipulation.targetPosition then
                         pcall(function()
                             local cam = workspace.CurrentCamera
-                            local dir = (State.manipulation.targetPosition - cam.CFrame.Position).Unit
+                            local origin = cam.CFrame.Position
+                            local target = State.manipulation.targetPosition
+                            local fakeCF = CFrame.new(origin, target)
+
+                            -- Patch args nếu có Direction/Origin
+                            local dir = (target - origin).Unit
                             for _, arg in ipairs(args) do
                                 if type(arg) == "table" then
                                     if arg.Direction ~= nil then arg.Direction = dir end
                                     if arg.direction ~= nil then arg.direction = dir end
-                                    if arg.Origin   ~= nil then arg.Origin = cam.CFrame.Position end
-                                    if arg.origin   ~= nil then arg.origin = cam.CFrame.Position end
+                                    if arg.Origin   ~= nil then arg.Origin    = origin end
+                                    if arg.origin   ~= nil then arg.origin    = origin end
+                                    if arg.CameraDirection ~= nil then arg.CameraDirection = dir end
+                                    if arg.LookAt   ~= nil then arg.LookAt    = target end
                                 end
                             end
+
+                            -- Patch camera CFrame tạm thời (Rivals dùng cam.CFrame để tính hướng bắn)
+                            local origCF = cam.CFrame
+                            pcall(function() cam.CFrame = fakeCF end)
+                            task.defer(function()
+                                pcall(function() cam.CFrame = origCF end)
+                            end)
                         end)
                     end
                 end
