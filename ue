@@ -17,18 +17,48 @@ local function ks_notify(title, msg)
     end)
 end
 
+-- Ping để wake Replit nếu đang sleep
+local function ks_wake()
+    pcall(function() game:HttpGet(KEY_SERVER .. "/") end)
+    task.wait(1.5)
+end
+
 local function ks_checkKey(key)
-    local ok, res = pcall(function()
-        return HttpService:JSONDecode(
-            game:HttpGet(KEY_SERVER .. "/api/check/" .. key)
-        )
-    end)
-    if not ok then return false, "Không thể kết nối server key" end
-    if res.valid then
-        local info = res.daysLeft == nil and "Vĩnh viễn" or ("Còn " .. res.daysLeft .. " ngày")
-        return true, info
+    -- Thử tối đa 3 lần (Replit có thể cần thời gian wake up)
+    for attempt = 1, 3 do
+        local ok, res = pcall(function()
+            local raw = game:HttpGet(KEY_SERVER .. "/api/check/" .. key)
+            return HttpService:JSONDecode(raw)
+        end)
+        if ok and type(res) == "table" then
+            -- Hỗ trợ cả 2 format: {valid, reason, daysLeft} và {success, key:{...}}
+            local valid = res.valid
+            if valid == nil and res.success ~= nil then
+                -- Format server riêng: {success: true, key: {...}}
+                valid = res.success == true
+            end
+            if valid then
+                local days = res.daysLeft
+                if days == nil and res.key then
+                    local exp = res.key.expires or res.key.auth_expire
+                    if exp and exp ~= 0 then
+                        days = math.ceil((exp - os.time()) / 86400)
+                    end
+                end
+                local info = (days == nil or days <= 0) and "Vĩnh viễn" or ("Còn " .. days .. " ngày")
+                return true, info
+            else
+                local reason = res.reason or res.message or res.error or "Key không hợp lệ"
+                return false, reason
+            end
+        end
+        -- Lần đầu fail → wake server rồi thử lại
+        if attempt < 3 then
+            pcall(function() game:HttpGet(KEY_SERVER .. "/") end)
+            task.wait(2)
+        end
     end
-    return false, res.reason or "Key không hợp lệ"
+    return false, "Server key không phản hồi. Thử lại sau."
 end
 
 local function ks_showUI(callback)
@@ -144,33 +174,33 @@ local function ks_showUI(callback)
         local key = tb.Text:gsub("%s", "")
         if key == "" then status.Text = "Vui lòng nhập key!"; return end
         setLoading(true)
-        status.Text = ""
-        local valid, msg = ks_checkKey(key)
-        setLoading(false)
-        if valid then
-            -- Lưu key
-            pcall(function()
-                if not isfolder("UE") then makefolder("UE") end
-                writefile(KEY_FILE, key)
-            end)
-            status.TextColor3 = Color3.fromRGB(80, 220, 120)
-            status.Text = "✅ " .. msg
-            btn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
-            btn.Text = "Đang tải..."
-            task.wait(0.8)
-            blur:Destroy()
-            sg:Destroy()
-            callback()
-        else
-            status.TextColor3 = Color3.fromRGB(255, 80, 80)
-            status.Text = "❌ " .. msg
-            -- Flash đỏ input
-            ts:Create(inputBg, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(60, 10, 10)}):Play()
-            task.wait(0.3)
-            ts:Create(inputBg, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(18, 18, 30)}):Play()
-            -- Xóa key lưu nếu có
-            pcall(function() if isfile(KEY_FILE) then delfile(KEY_FILE) end end)
-        end
+        status.TextColor3 = Color3.fromRGB(160, 160, 220)
+        status.Text = "⏳ Đang kết nối server..."
+        task.spawn(function()
+            local valid, msg = ks_checkKey(key)
+            setLoading(false)
+            if valid then
+                pcall(function()
+                    if not isfolder("UE") then makefolder("UE") end
+                    writefile(KEY_FILE, key)
+                end)
+                status.TextColor3 = Color3.fromRGB(80, 220, 120)
+                status.Text = "✅ " .. msg
+                btn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
+                btn.Text = "Đang tải menu..."
+                task.wait(0.8)
+                blur:Destroy()
+                sg:Destroy()
+                callback()
+            else
+                status.TextColor3 = Color3.fromRGB(255, 80, 80)
+                status.Text = "❌ " .. msg
+                ts:Create(inputBg, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(60, 10, 10)}):Play()
+                task.wait(0.3)
+                ts:Create(inputBg, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(18, 18, 30)}):Play()
+                pcall(function() if isfile(KEY_FILE) then delfile(KEY_FILE) end end)
+            end
+        end)
     end
 
     btn.MouseButton1Click:Connect(doCheck)
