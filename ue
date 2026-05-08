@@ -1,3 +1,213 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║            KEY VERIFICATION — UE Key System              ║
+-- ╚══════════════════════════════════════════════════════════╝
+local KEY_SERVER = "https://2a18c917-b444-45fb-b72d-d2bb79a4b840-00-3vqktgslwn4r7.sisko.replit.dev"
+local KEY_FILE   = "UE/key.txt"
+local HttpService = game:GetService("HttpService")
+local Players_ks  = game:GetService("Players")
+local lp          = Players_ks.LocalPlayer
+
+local function ks_notify(title, msg)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title    = "UE | " .. title,
+            Text     = msg,
+            Duration = 6,
+        })
+    end)
+end
+
+local function ks_checkKey(key)
+    local ok, res = pcall(function()
+        return HttpService:JSONDecode(
+            game:HttpGet(KEY_SERVER .. "/api/check/" .. key)
+        )
+    end)
+    if not ok then return false, "Không thể kết nối server key" end
+    if res.valid then
+        local info = res.daysLeft == nil and "Vĩnh viễn" or ("Còn " .. res.daysLeft .. " ngày")
+        return true, info
+    end
+    return false, res.reason or "Key không hợp lệ"
+end
+
+local function ks_showUI(callback)
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "UE_KeyUI"
+    sg.ResetOnSpawn = false
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    pcall(function()
+        if syn then syn.protect_gui(sg) end
+        sg.Parent = game:GetService("CoreGui")
+    end)
+    if not sg.Parent then sg.Parent = lp:FindFirstChildOfClass("PlayerGui") end
+
+    -- Blur
+    local blur = Instance.new("BlurEffect")
+    blur.Size = 20
+    blur.Parent = game:GetService("Lighting")
+
+    -- Backdrop
+    local bg = Instance.new("Frame", sg)
+    bg.Size = UDim2.fromScale(1, 1)
+    bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    bg.BackgroundTransparency = 0.45
+    bg.BorderSizePixel = 0
+
+    -- Card
+    local card = Instance.new("Frame", sg)
+    card.AnchorPoint = Vector2.new(0.5, 0.5)
+    card.Position = UDim2.fromScale(0.5, 0.5)
+    card.Size = UDim2.fromOffset(400, 220)
+    card.BackgroundColor3 = Color3.fromRGB(10, 10, 18)
+    card.BorderSizePixel = 0
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 12)
+    local stroke = Instance.new("UIStroke", card)
+    stroke.Color = Color3.fromRGB(100, 60, 220)
+    stroke.Thickness = 1.5
+
+    -- Title
+    local title = Instance.new("TextLabel", card)
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.Position = UDim2.fromOffset(0, 12)
+    title.BackgroundTransparency = 1
+    title.Text = "🔑  Unnamed Enhancements"
+    title.TextColor3 = Color3.fromRGB(200, 160, 255)
+    title.TextSize = 17
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Center
+
+    -- Subtitle
+    local sub = Instance.new("TextLabel", card)
+    sub.Size = UDim2.new(1, -40, 0, 22)
+    sub.Position = UDim2.fromOffset(20, 50)
+    sub.BackgroundTransparency = 1
+    sub.Text = "Nhập key để tiếp tục"
+    sub.TextColor3 = Color3.fromRGB(120, 120, 160)
+    sub.TextSize = 13
+    sub.Font = Enum.Font.Gotham
+    sub.TextXAlignment = Enum.TextXAlignment.Center
+
+    -- Input
+    local inputBg = Instance.new("Frame", card)
+    inputBg.Size = UDim2.new(1, -40, 0, 38)
+    inputBg.Position = UDim2.fromOffset(20, 82)
+    inputBg.BackgroundColor3 = Color3.fromRGB(18, 18, 30)
+    inputBg.BorderSizePixel = 0
+    Instance.new("UICorner", inputBg).CornerRadius = UDim.new(0, 8)
+    local inputStroke = Instance.new("UIStroke", inputBg)
+    inputStroke.Color = Color3.fromRGB(60, 60, 100)
+
+    local tb = Instance.new("TextBox", inputBg)
+    tb.Size = UDim2.new(1, -16, 1, 0)
+    tb.Position = UDim2.fromOffset(8, 0)
+    tb.BackgroundTransparency = 1
+    tb.PlaceholderText = "Paste key vào đây..."
+    tb.PlaceholderColor3 = Color3.fromRGB(80, 80, 110)
+    tb.TextColor3 = Color3.fromRGB(220, 200, 255)
+    tb.TextSize = 13
+    tb.Font = Enum.Font.Code
+    tb.ClearTextOnFocus = false
+    tb.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- Status label
+    local status = Instance.new("TextLabel", card)
+    status.Size = UDim2.new(1, -40, 0, 20)
+    status.Position = UDim2.fromOffset(20, 128)
+    status.BackgroundTransparency = 1
+    status.Text = ""
+    status.TextColor3 = Color3.fromRGB(255, 100, 100)
+    status.TextSize = 12
+    status.Font = Enum.Font.Gotham
+    status.TextXAlignment = Enum.TextXAlignment.Center
+
+    -- Button
+    local btn = Instance.new("TextButton", card)
+    btn.Size = UDim2.new(1, -40, 0, 40)
+    btn.Position = UDim2.fromOffset(20, 156)
+    btn.BackgroundColor3 = Color3.fromRGB(100, 60, 220)
+    btn.BorderSizePixel = 0
+    btn.Text = "Xác nhận key"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 14
+    btn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+    local ts = game:GetService("TweenService")
+    local function setLoading(on)
+        btn.Text = on and "Đang kiểm tra..." or "Xác nhận key"
+        btn.BackgroundColor3 = on and Color3.fromRGB(60, 40, 130) or Color3.fromRGB(100, 60, 220)
+        btn.Active = not on
+    end
+
+    local function doCheck()
+        local key = tb.Text:gsub("%s", "")
+        if key == "" then status.Text = "Vui lòng nhập key!"; return end
+        setLoading(true)
+        status.Text = ""
+        local valid, msg = ks_checkKey(key)
+        setLoading(false)
+        if valid then
+            -- Lưu key
+            pcall(function()
+                if not isfolder("UE") then makefolder("UE") end
+                writefile(KEY_FILE, key)
+            end)
+            status.TextColor3 = Color3.fromRGB(80, 220, 120)
+            status.Text = "✅ " .. msg
+            btn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
+            btn.Text = "Đang tải..."
+            task.wait(0.8)
+            blur:Destroy()
+            sg:Destroy()
+            callback()
+        else
+            status.TextColor3 = Color3.fromRGB(255, 80, 80)
+            status.Text = "❌ " .. msg
+            -- Flash đỏ input
+            ts:Create(inputBg, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(60, 10, 10)}):Play()
+            task.wait(0.3)
+            ts:Create(inputBg, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(18, 18, 30)}):Play()
+            -- Xóa key lưu nếu có
+            pcall(function() if isfile(KEY_FILE) then delfile(KEY_FILE) end end)
+        end
+    end
+
+    btn.MouseButton1Click:Connect(doCheck)
+    tb.FocusLost:Connect(function(enter) if enter then doCheck() end end)
+end
+
+-- Kiểm tra key đã lưu hoặc hiện UI
+local function ks_start(callback)
+    local savedKey = nil
+    pcall(function()
+        if isfolder and isfile and isfile(KEY_FILE) then
+            savedKey = readfile(KEY_FILE):gsub("%s", "")
+        end
+    end)
+
+    if savedKey and savedKey ~= "" then
+        local valid, msg = ks_checkKey(savedKey)
+        if valid then
+            ks_notify("Key hợp lệ", msg)
+            callback()
+            return
+        else
+            ks_notify("Key hết hạn", msg)
+            pcall(function() delfile(KEY_FILE) end)
+        end
+    end
+
+    ks_showUI(callback)
+end
+
+-- Chạy key check, chỉ tiếp tục nếu hợp lệ
+ks_start(function()
+
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║               MAIN SCRIPT BẮT ĐẦU TỪ ĐÂY               ║
+-- ╚══════════════════════════════════════════════════════════╝
+
 local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua'))()
 local SaveManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua'))()
 local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua'))()
@@ -747,13 +957,7 @@ local M = function(R)
 		local T = R[0]
 		return function()
 			T.Parent = Toggles.atmosphere_enabled.Value and game:GetService("Lighting") or nil
-			if not T.Parent then
-				return
-			end
-			pcall(function()
-				local col = Options.atmosphere_color and Options.atmosphere_color.Value
-				if typeof(col) == "Color3" then T.Color = col end
-			end)
+			if not T.Parent then return end
 			pcall(function() T.Decay   = Options.atmosphere_decay.Value   end)
 			pcall(function() T.Glare   = Options.atmosphere_glare.Value   end)
 			pcall(function() T.Haze    = Options.atmosphere_haze.Value    end)
@@ -4830,7 +5034,6 @@ local function initialize(Library)
 
     local AtmoGroupbox = WorldTab:AddRightGroupbox("Atmosphere")
     AtmoGroupbox:AddToggle("atmosphere_enabled", { Text = "enable", Default = false })
-        :AddColorPicker("atmosphere_color", { Default = Color3.fromRGB(199, 170, 140) })
     AtmoGroupbox:AddSlider("atmosphere_decay", { Text = "decay", Min = 0, Max = 1, Default = 0, Rounding = 2 })
     AtmoGroupbox:AddSlider("atmosphere_glare", { Text = "glare", Min = 0, Max = 1, Default = 0, Rounding = 2 })
     AtmoGroupbox:AddSlider("atmosphere_haze", { Text = "haze", Min = 0, Max = 10, Default = 0, Rounding = 1 })
@@ -5381,11 +5584,12 @@ local function initialize(Library)
     Players.PlayerAdded:Connect(function(p) task.wait(1); pcall(createESP, p) end)
     Players.PlayerRemoving:Connect(removeESP)
 
-    -- Cache weapon names, cập nhật mỗi 1.5s thay vì mỗi frame
+    -- Cache weapon names, cập nhật mỗi 3s và chỉ khi toggle bật
     local weaponCache = {}
     task.spawn(function()
         while true do
-            task.wait(1.5)
+            task.wait(3)
+            if not (Toggles.esp_weapon and Toggles.esp_weapon.Value) then continue end
             pcall(function()
                 for _, v in pairs(getgc(true)) do
                     if type(v) == "table" then
@@ -5530,3 +5734,5 @@ end
 
 initialize(Library)
 getgenv().UE_LOADED = true
+
+end) -- end ks_start
