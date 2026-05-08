@@ -1,7 +1,7 @@
 -- ╔══════════════════════════════════════════════════════════╗
 -- ║            KEY VERIFICATION — UE Key System              ║
 -- ╚══════════════════════════════════════════════════════════╝
-local KEY_SERVER = "https://2a18c917-b444-45fb-b72d-d2bb79a4b840-00-3vqktgslwn4r7.sisko.replit.dev"
+local KEY_SERVER = "https://key-manager-roblox--nhatdapda20.replit.app"
 local KEY_FILE   = "UE/key.txt"
 local HttpService = game:GetService("HttpService")
 local Players_ks  = game:GetService("Players")
