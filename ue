@@ -5544,11 +5544,6 @@ local function initialize(Library)
         bodySpinActive = false
         for _, c in ipairs(bodySpinConns) do pcall(function() c:Disconnect() end) end
         bodySpinConns = {}
-        local char = LocalPlayer.Character
-        if not char then return end
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("Motor6D") then p.Enabled = true end
-        end
     end
 
     local function startBodySpin()
@@ -5564,9 +5559,7 @@ local function initialize(Library)
         }
         local angles = {}
         for _, name in ipairs(spinParts) do angles[name] = math.random()*math.pi*2 end
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("Motor6D") then p.Enabled = false end
-        end
+        -- KHÔNG disable Motor6D - set CFrame mỗi frame thay thế
         local conn = game:GetService("RunService").RenderStepped:Connect(function(dt)
             if not bodySpinActive then return end
             local c2 = LocalPlayer.Character
@@ -5601,11 +5594,6 @@ local function initialize(Library)
         solarActive = false
         for _, c in ipairs(solarConns) do pcall(function() c:Disconnect() end) end
         solarConns = {}
-        local char = LocalPlayer.Character
-        if not char then return end
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("Motor6D") then p.Enabled = true end
-        end
     end
 
     local function startSolar()
@@ -5623,9 +5611,7 @@ local function initialize(Library)
         }
         local angles = {}
         for _, o in ipairs(orbitParts) do angles[o.name] = o.phase end
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("Motor6D") then p.Enabled = false end
-        end
+        -- KHÔNG disable Motor6D
         local conn = RunService.RenderStepped:Connect(function(dt)
             if not solarActive then return end
             local c2 = LocalPlayer.Character
@@ -6137,46 +6123,55 @@ local function initialize(Library)
         end)
     end
 
-    -- VOID SPAM: HRP bay loạn xạ server-side, camera HOÀN TOÀN độc lập
+    -- VOID SPAM: 
+    -- - Visual: nhân vật + camera giữ nguyên tại chỗ (client thấy đứng yên)
+    -- - Server: HRP spam đến vị trí xa ngẫu nhiên (địch không lock được)
     local function startVoidSpam()
         if voidConn then voidConn:Disconnect(); voidConn = nil end
         if not voidActive then return end
 
         local cam = workspace.CurrentCamera
-        -- Lock camera hoàn toàn ngay từ đầu
-        cam.CameraType = Enum.CameraType.Scriptable
-        local lockedCamCF = cam.CFrame
-
-        -- Cập nhật locked cam theo rotation của player (WASD nhìn quanh được)
-        local camUpdateConn = RunService.RenderStepped:Connect(function()
-            if not voidActive then return end
-            -- Chỉ giữ position, cho phép rotation
-            lockedCamCF = CFrame.new(lockedCamCF.Position) * (cam.CFrame - cam.CFrame.Position)
-            cam.CFrame = lockedCamCF
-        end)
-
-        -- Lưu vị trí gốc để offset tương đối
         local char0 = LocalPlayer.Character
         local hrp0 = char0 and char0:FindFirstChild("HumanoidRootPart")
-        local basePos = hrp0 and hrp0.Position or Vector3.new(0, 0, 0)
+        if not hrp0 then return end
 
-        -- Offset nhỏ quanh vị trí hiện tại, không bay ra map
-        local voidOffsets = {
-            Vector3.new(0, 50, 0),
-            Vector3.new(50, 20, 0),
-            Vector3.new(-50, 20, 0),
-            Vector3.new(0, -50, 0),
-            Vector3.new(30, 30, 30),
-            Vector3.new(-30, 30, -30),
-            Vector3.new(0, 20, 50),
-            Vector3.new(0, 20, -50),
+        -- Lưu vị trí visual (client)
+        local visualCF = hrp0.CFrame
+        local visualCamCF = cam.CFrame
+
+        -- Lock camera
+        cam.CameraType = Enum.CameraType.Scriptable
+        cam.CFrame = visualCamCF
+
+        -- Vị trí spam xa (server thấy)
+        local spamPositions = {
+            Vector3.new(10000, 5000, 10000),
+            Vector3.new(-10000, 5000, 10000),
+            Vector3.new(10000, 5000, -10000),
+            Vector3.new(-10000, 5000, -10000),
+            Vector3.new(0, 50000, 0),
+            Vector3.new(50000, 0, 0),
+            Vector3.new(-50000, 0, 0),
+            Vector3.new(0, 0, 50000),
         }
-        local voidIdx = 0
+        local spamIdx = 0
 
+        -- RenderStepped: restore visual position mỗi frame (client thấy đứng yên)
+        local renderConn = RunService.RenderStepped:Connect(function()
+            if not voidActive then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            -- Giữ camera
+            cam.CFrame = visualCamCF
+        end)
+
+        -- Heartbeat: spam HRP server-side
         voidConn = RunService.Heartbeat:Connect(function()
             pcall(function()
                 if not voidActive then
-                    camUpdateConn:Disconnect()
+                    renderConn:Disconnect()
                     cam.CameraType = Enum.CameraType.Custom
                     return
                 end
@@ -6185,21 +6180,24 @@ local function initialize(Library)
                 local hrp = char:FindFirstChild("HumanoidRootPart")
                 if not hrp then return end
 
-                -- Cập nhật basePos theo vị trí thực (khi rage tele)
-                basePos = hrp.Position
+                -- Spam đến vị trí xa (server thấy)
+                spamIdx = (spamIdx % #spamPositions) + 1
+                hrp.CFrame = CFrame.new(spamPositions[spamIdx])
 
-                -- Spam HRP offset nhỏ quanh vị trí hiện tại
-                voidIdx = (voidIdx % #voidOffsets) + 1
-                hrp.CFrame = CFrame.new(basePos + voidOffsets[voidIdx])
+                -- Ngay sau đó restore về visual position (client thấy)
+                task.defer(function()
+                    if hrp and hrp.Parent then
+                        hrp.CFrame = visualCF
+                    end
+                end)
             end)
-            task.wait(0.03)
+            task.wait(0.02)
         end)
     end
 
     local function stopVoidSpam()
         voidActive = false
         if voidConn then voidConn:Disconnect(); voidConn = nil end
-        -- Restore camera
         pcall(function()
             workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
         end)
