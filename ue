@@ -5573,16 +5573,20 @@ local function initialize(Library)
             if not c2 then return end
             local root = c2:FindFirstChild("HumanoidRootPart")
             if not root then return end
-            local rCF = root.CFrame
+            -- Luôn orbit QUANH vị trí HRP hiện tại (di chuyển theo nhân vật)
+            local rootPos = root.Position
+            local rootCF = root.CFrame
             for _, name in ipairs(spinParts) do
                 local part = c2:FindFirstChild(name)
                 if part and part:IsA("BasePart") then
-                    angles[name] = (angles[name] or 0) + dt * 4
+                    angles[name] = (angles[name] or 0) + dt * 3
                     local off = offsets[name] or Vector3.new(0,0,0)
-                    local d = Vector3.new(off.X,0,off.Z).Magnitude + 1.5
-                    local x = math.cos(angles[name]) * d
-                    local z = math.sin(angles[name]) * d
-                    part.CFrame = rCF * CFrame.new(x, off.Y, z) * CFrame.Angles(angles[name], angles[name]*0.7, 0)
+                    local radius = 2.5
+                    local x = math.cos(angles[name]) * radius
+                    local z = math.sin(angles[name]) * radius
+                    -- Offset tương đối so với HRP
+                    part.CFrame = CFrame.new(rootPos + Vector3.new(x, off.Y, z))
+                        * CFrame.Angles(angles[name], angles[name] * 0.5, 0)
                 end
             end
         end)
@@ -5628,13 +5632,16 @@ local function initialize(Library)
             if not c2 then return end
             local torso = c2:FindFirstChild("UpperTorso") or c2:FindFirstChild("HumanoidRootPart")
             if not torso then return end
+            -- Center point luôn là vị trí torso hiện tại
+            local centerPos = torso.Position
             for _, o in ipairs(orbitParts) do
                 local part = c2:FindFirstChild(o.name)
                 if part and part:IsA("BasePart") then
                     angles[o.name] = (angles[o.name] or 0) + dt * o.speed
                     local x = math.cos(angles[o.name]) * o.radius
                     local z = math.sin(angles[o.name]) * o.radius
-                    part.CFrame = torso.CFrame * CFrame.new(x, o.yOffset, z)
+                    -- Offset tương đối so với centerPos
+                    part.CFrame = CFrame.new(centerPos + Vector3.new(x, o.yOffset, z))
                         * CFrame.Angles(angles[o.name], angles[o.name] * 0.5, 0)
                 end
             end
@@ -6148,15 +6155,21 @@ local function initialize(Library)
             cam.CFrame = lockedCamCF
         end)
 
-        local voidPositions = {
-            Vector3.new(0, 2000, 0),
-            Vector3.new(2000, 500, 0),
-            Vector3.new(-2000, 500, 0),
-            Vector3.new(0, -2000, 0),
-            Vector3.new(1000, 1000, 1000),
-            Vector3.new(-1000, 1000, -1000),
-            Vector3.new(0, 500, 2000),
-            Vector3.new(0, 500, -2000),
+        -- Lưu vị trí gốc để offset tương đối
+        local char0 = LocalPlayer.Character
+        local hrp0 = char0 and char0:FindFirstChild("HumanoidRootPart")
+        local basePos = hrp0 and hrp0.Position or Vector3.new(0, 0, 0)
+
+        -- Offset nhỏ quanh vị trí hiện tại, không bay ra map
+        local voidOffsets = {
+            Vector3.new(0, 50, 0),
+            Vector3.new(50, 20, 0),
+            Vector3.new(-50, 20, 0),
+            Vector3.new(0, -50, 0),
+            Vector3.new(30, 30, 30),
+            Vector3.new(-30, 30, -30),
+            Vector3.new(0, 20, 50),
+            Vector3.new(0, 20, -50),
         }
         local voidIdx = 0
 
@@ -6172,11 +6185,14 @@ local function initialize(Library)
                 local hrp = char:FindFirstChild("HumanoidRootPart")
                 if not hrp then return end
 
-                -- Spam HRP đến vị trí random (server thấy, client không thấy)
-                voidIdx = (voidIdx % #voidPositions) + 1
-                hrp.CFrame = CFrame.new(voidPositions[voidIdx])
+                -- Cập nhật basePos theo vị trí thực (khi rage tele)
+                basePos = hrp.Position
+
+                -- Spam HRP offset nhỏ quanh vị trí hiện tại
+                voidIdx = (voidIdx % #voidOffsets) + 1
+                hrp.CFrame = CFrame.new(basePos + voidOffsets[voidIdx])
             end)
-            task.wait(0.03) -- nhanh hơn để địch không lock được
+            task.wait(0.03)
         end)
     end
 
