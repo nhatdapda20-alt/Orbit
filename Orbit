@@ -6,14 +6,13 @@ local settings = {
     active = false,
     target = nil,
     radius = 10000,
-    speed = 10000,
+    speed = 10000,  -- giữ nguyên nhưng không dùng interval nữa
     jitterAmount = 80,
     headStomp = false
 }
 
 local orbitConn = nil
 local headStompConn = nil
-local lastTeleport = 0
 local Gui, MainFrame, StatusLabel, TargetLabel, ToggleButton, HeadStompButton
 
 if player.PlayerGui:FindFirstChild("OrbitByNhat") then
@@ -147,13 +146,9 @@ end
 
 -- === TÌM VỊ TRÍ ĐẦU (FIX CHO RIVALS) ===
 local function getHeadPosition(targetChar)
-    -- Thử tìm Head trước
     local head = targetChar:FindFirstChild("Head")
-    if head then
-        return head.Position
-    end
+    if head then return head.Position end
     
-    -- Nếu không có Head, thử tìm phần cao nhất của character
     local highestY = -math.huge
     local highestPos = nil
     
@@ -167,21 +162,15 @@ local function getHeadPosition(targetChar)
         end
     end
     
-    -- Nếu tìm thấy phần cao nhất
-    if highestPos then
-        return highestPos
-    end
+    if highestPos then return highestPos end
     
-    -- Fallback: dùng HumanoidRootPart + offset
     local root = targetChar:FindFirstChild("HumanoidRootPart")
-    if root then
-        return root.Position + Vector3.new(0, 5, 0)
-    end
+    if root then return root.Position + Vector3.new(0, 5, 0) end
     
     return nil
 end
 
--- === ORBIT ===
+-- === ORBIT - FIX: SPAM LIÊN TỤC KHÔNG NGỪNG ===
 local function startOrbit()
     if settings.active then return end
     if settings.headStomp then stopHeadStomp() end
@@ -199,51 +188,73 @@ local function startOrbit()
     ToggleButton.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
     ToggleStroke.Color = Color3.fromRGB(255, 0, 0)
     workspace.Gravity = 0
+    
     local angleBase = 0
     local jitterPhase = 0
+    
     if orbitConn then orbitConn:Disconnect() end
-    orbitConn = RunService.Heartbeat:Connect(function()
-        if not settings.active then orbitConn:Disconnect() return end
+    
+    -- Dùng RenderStepped thay vì Heartbeat để spam nhanh hơn
+    orbitConn = RunService.RenderStepped:Connect(function()
+        if not settings.active then 
+            orbitConn:Disconnect() 
+            return 
+        end
+        
+        -- Kiểm tra target còn sống không
         if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
             settings.target = findTarget()
-            if not settings.target then stopOrbit() return end
+            if not settings.target then 
+                stopOrbit() 
+                return 
+            end
             TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
         end
+        
         local targetRoot = settings.target.Character.HumanoidRootPart
         local myChar = player.Character
         if not myChar then return end
         local myRoot = myChar:FindFirstChild("HumanoidRootPart")
         if not myRoot then return end
-        local now = tick()
-        local interval = 1 / settings.speed
-        if now - lastTeleport < interval then return end
-        lastTeleport = now
-        angleBase = (angleBase + 0.5) % (math.pi * 2)
-        jitterPhase = jitterPhase + 0.7
+        
+        -- KHÔNG check interval - SPAM MỖI FRAME
+        angleBase = (angleBase + 0.8) % (math.pi * 2)
+        jitterPhase = jitterPhase + 1
+        
         local r = settings.radius
         local targetPos = targetRoot.Position
+        
+        -- Tạo vị trí quỹ đạo với jitter liên tục
         local baseX = math.sin(angleBase) * r
         local baseZ = math.cos(angleBase) * r
-        local jitterX = math.sin(jitterPhase * 5) * (r * 0.5) + math.random(-settings.jitterAmount, settings.jitterAmount)
-        local jitterY = math.cos(jitterPhase * 3) * (r * 0.6) + math.random(-settings.jitterAmount, settings.jitterAmount) + 30
-        local jitterZ = math.sin(jitterPhase * 4) * (r * 0.4) + math.random(-settings.jitterAmount, settings.jitterAmount)
+        local jitterX = math.sin(jitterPhase * 5) * (r * 0.6) + math.random(-settings.jitterAmount, settings.jitterAmount)
+        local jitterY = math.cos(jitterPhase * 3) * (r * 0.7) + math.random(-settings.jitterAmount, settings.jitterAmount) + 35
+        local jitterZ = math.sin(jitterPhase * 4) * (r * 0.5) + math.random(-settings.jitterAmount, settings.jitterAmount)
+        
         local desiredPos = Vector3.new(
             targetPos.X + baseX + jitterX,
             targetPos.Y + jitterY,
             targetPos.Z + baseZ + jitterZ
         )
+        
+        -- Teleport liên tục mỗi frame
         myRoot.CFrame = CFrame.new(desiredPos)
         myRoot.CFrame = myRoot.CFrame * CFrame.Angles(
-            math.rad(math.random(-60, 60)),
+            math.rad(math.random(-80, 80)),
             math.rad(math.random(0, 360)),
-            math.rad(math.random(-60, 60))
+            math.rad(math.random(-80, 80))
         )
         myRoot.Velocity = Vector3.zero
         myRoot.RotVelocity = Vector3.zero
+        
+        -- Disable ragdoll
         local hum = myChar:FindFirstChild("Humanoid")
         if hum then
             hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
             hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            hum.PlatformStand = true
         end
     end)
 end
@@ -258,6 +269,9 @@ local function stopOrbit()
         if hum then
             hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
             hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            hum.PlatformStand = false
         end
     end
     StatusLabel.Text = "🔴 INACTIVE"
@@ -268,7 +282,7 @@ local function stopOrbit()
     ToggleStroke.Color = Color3.fromRGB(0, 255, 0)
 end
 
--- === HEAD STOMP FIX CHO RIVALS ===
+-- === HEAD STOMP - SPAM LIÊN TỤC ===
 local function startHeadStomp()
     if settings.headStomp then return end
     if settings.active then stopOrbit() end
@@ -287,39 +301,35 @@ local function startHeadStomp()
     HeadStompStroke.Color = Color3.fromRGB(255, 0, 0)
     workspace.Gravity = 0
     
-    -- Teleport ngay lập tức lên đầu địch
-    local myChar = player.Character
-    if myChar and myChar:FindFirstChild("HumanoidRootPart") then
-        local myRoot = myChar.HumanoidRootPart
-        local targetChar = target.Character
-        if targetChar then
-            local headPos = getHeadPosition(targetChar)
-            if headPos then
-                myRoot.CFrame = CFrame.new(headPos + Vector3.new(0, 3, 0))
-                myRoot.Velocity = Vector3.zero
-            end
-        end
-    end
-    
     if headStompConn then headStompConn:Disconnect() end
     
-    headStompConn = RunService.Heartbeat:Connect(function()
-        if not settings.headStomp then headStompConn:Disconnect() return end
+    -- SPAM LIÊN TỤC KHÔNG NGỪNG
+    headStompConn = RunService.RenderStepped:Connect(function()
+        if not settings.headStomp then 
+            headStompConn:Disconnect() 
+            return 
+        end
+        
         if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
             settings.target = findTarget()
-            if not settings.target then stopHeadStomp() return end
+            if not settings.target then 
+                stopHeadStomp() 
+                return 
+            end
             TargetLabel.Text = "🎯 TARGET: " .. settings.target.Name
         end
+        
         local targetChar = settings.target.Character
         local myChar = player.Character
         if not myChar then return end
         local myRoot = myChar:FindFirstChild("HumanoidRootPart")
         if not myRoot then return end
         
-        -- Dùng hàm getHeadPosition đã fix
+        -- Lấy vị trí đầu địch mỗi frame
         local headPos = getHeadPosition(targetChar)
         if headPos then
-            myRoot.CFrame = CFrame.new(headPos + Vector3.new(0, 3, 0))
+            -- Teleport lên đầu + quay liên tục
+            myRoot.CFrame = CFrame.new(headPos + Vector3.new(0, 3, 0)) * CFrame.Angles(0, math.rad(tick() * 500), 0)
             myRoot.Velocity = Vector3.zero
             myRoot.RotVelocity = Vector3.zero
         end
@@ -328,6 +338,7 @@ local function startHeadStomp()
         if hum then
             hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
             hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+            hum.PlatformStand = true
         end
     end)
 end
@@ -342,6 +353,7 @@ local function stopHeadStomp()
         if hum then
             hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
             hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+            hum.PlatformStand = false
         end
     end
     StatusLabel.Text = "🔴 INACTIVE"
@@ -373,14 +385,12 @@ end)
 
 player.CharacterAdded:Connect(function()
     if settings.active then
-        stopOrbit()
-        task.wait(0.5)
+        task.wait(0.3)
         startOrbit()
     elseif settings.headStomp then
-        stopHeadStomp()
-        task.wait(0.5)
+        task.wait(0.3)
         startHeadStomp()
     end
 end)
 
-print("✅ ORBIT BY NHẬT!")
+print("✅ ORBIT BY NHẬT - FIX: SPAM LIÊN TỤC KHÔNG NGỪNG!")
