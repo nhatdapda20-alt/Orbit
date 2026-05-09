@@ -6,7 +6,6 @@ local settings = {
     active = false,
     target = nil,
     radius = 10000,
-    speed = 10000,  -- giữ nguyên nhưng không dùng interval nữa
     jitterAmount = 80,
     headStomp = false
 }
@@ -144,7 +143,7 @@ local function findTarget()
     return nearest
 end
 
--- === TÌM VỊ TRÍ ĐẦU (FIX CHO RIVALS) ===
+-- === TÌM VỊ TRÍ ĐẦU ===
 local function getHeadPosition(targetChar)
     local head = targetChar:FindFirstChild("Head")
     if head then return head.Position end
@@ -170,17 +169,20 @@ local function getHeadPosition(targetChar)
     return nil
 end
 
--- === ORBIT - FIX: SPAM LIÊN TỤC KHÔNG NGỪNG ===
+-- === ORBIT - SPAM LIÊN TỤC KHÔNG NGỪNG ===
 local function startOrbit()
     if settings.active then return end
     if settings.headStomp then stopHeadStomp() end
+    
     local target = findTarget()
     if not target then
         TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
         return
     end
+    
     settings.active = true
     settings.target = target
+    
     StatusLabel.Text = "🟢 ORBIT ACTIVE"
     StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
     TargetLabel.Text = "🎯 TARGET: " .. target.Name
@@ -194,14 +196,14 @@ local function startOrbit()
     
     if orbitConn then orbitConn:Disconnect() end
     
-    -- Dùng RenderStepped thay vì Heartbeat để spam nhanh hơn
+    -- Dùng RenderStepped để spam mỗi FRAME (60 lần/giây)
     orbitConn = RunService.RenderStepped:Connect(function()
         if not settings.active then 
             orbitConn:Disconnect() 
             return 
         end
         
-        -- Kiểm tra target còn sống không
+        -- Kiểm tra target
         if not settings.target or not settings.target.Character or not settings.target.Character:FindFirstChild("HumanoidRootPart") then
             settings.target = findTarget()
             if not settings.target then 
@@ -217,19 +219,19 @@ local function startOrbit()
         local myRoot = myChar:FindFirstChild("HumanoidRootPart")
         if not myRoot then return end
         
-        -- KHÔNG check interval - SPAM MỖI FRAME
-        angleBase = (angleBase + 0.8) % (math.pi * 2)
-        jitterPhase = jitterPhase + 1
+        -- SPAM LIÊN TỤC - KHÔNG CHECK INTERVAL
+        angleBase = (angleBase + 1.2) % (math.pi * 2)
+        jitterPhase = jitterPhase + 1.5
         
         local r = settings.radius
         local targetPos = targetRoot.Position
         
-        -- Tạo vị trí quỹ đạo với jitter liên tục
+        -- Tạo vị trí quỹ đạo
         local baseX = math.sin(angleBase) * r
         local baseZ = math.cos(angleBase) * r
-        local jitterX = math.sin(jitterPhase * 5) * (r * 0.6) + math.random(-settings.jitterAmount, settings.jitterAmount)
-        local jitterY = math.cos(jitterPhase * 3) * (r * 0.7) + math.random(-settings.jitterAmount, settings.jitterAmount) + 35
-        local jitterZ = math.sin(jitterPhase * 4) * (r * 0.5) + math.random(-settings.jitterAmount, settings.jitterAmount)
+        local jitterX = math.sin(jitterPhase * 6) * (r * 0.7) + math.random(-settings.jitterAmount, settings.jitterAmount)
+        local jitterY = math.cos(jitterPhase * 4) * (r * 0.8) + math.random(-settings.jitterAmount, settings.jitterAmount) + 40
+        local jitterZ = math.sin(jitterPhase * 5) * (r * 0.6) + math.random(-settings.jitterAmount, settings.jitterAmount)
         
         local desiredPos = Vector3.new(
             targetPos.X + baseX + jitterX,
@@ -237,12 +239,11 @@ local function startOrbit()
             targetPos.Z + baseZ + jitterZ
         )
         
-        -- Teleport liên tục mỗi frame
-        myRoot.CFrame = CFrame.new(desiredPos)
-        myRoot.CFrame = myRoot.CFrame * CFrame.Angles(
-            math.rad(math.random(-80, 80)),
+        -- TELEPORT MỖI FRAME
+        myRoot.CFrame = CFrame.new(desiredPos) * CFrame.Angles(
+            math.rad(math.random(-90, 90)),
             math.rad(math.random(0, 360)),
-            math.rad(math.random(-80, 80))
+            math.rad(math.random(-90, 90))
         )
         myRoot.Velocity = Vector3.zero
         myRoot.RotVelocity = Vector3.zero
@@ -286,13 +287,16 @@ end
 local function startHeadStomp()
     if settings.headStomp then return end
     if settings.active then stopOrbit() end
+    
     local target = findTarget()
     if not target then
         TargetLabel.Text = "🎯 TARGET: NO TARGET FOUND"
         return
     end
+    
     settings.headStomp = true
     settings.target = target
+    
     StatusLabel.Text = "🟣 HEAD STOMP ACTIVE"
     StatusLabel.TextColor3 = Color3.fromRGB(255, 150, 0)
     TargetLabel.Text = "🎯 TARGET: " .. target.Name
@@ -303,7 +307,7 @@ local function startHeadStomp()
     
     if headStompConn then headStompConn:Disconnect() end
     
-    -- SPAM LIÊN TỤC KHÔNG NGỪNG
+    -- SPAM MỖI FRAME
     headStompConn = RunService.RenderStepped:Connect(function()
         if not settings.headStomp then 
             headStompConn:Disconnect() 
@@ -325,11 +329,11 @@ local function startHeadStomp()
         local myRoot = myChar:FindFirstChild("HumanoidRootPart")
         if not myRoot then return end
         
-        -- Lấy vị trí đầu địch mỗi frame
         local headPos = getHeadPosition(targetChar)
         if headPos then
-            -- Teleport lên đầu + quay liên tục
-            myRoot.CFrame = CFrame.new(headPos + Vector3.new(0, 3, 0)) * CFrame.Angles(0, math.rad(tick() * 500), 0)
+            -- TELEPORT LÊN ĐẦU MỖI FRAME + QUAY LIÊN TỤC
+            local spin = tick() * 500
+            myRoot.CFrame = CFrame.new(headPos + Vector3.new(0, 3, 0)) * CFrame.Angles(0, math.rad(spin), 0)
             myRoot.Velocity = Vector3.zero
             myRoot.RotVelocity = Vector3.zero
         end
@@ -384,13 +388,12 @@ HeadStompButton.MouseButton1Click:Connect(function()
 end)
 
 player.CharacterAdded:Connect(function()
+    task.wait(0.5)
     if settings.active then
-        task.wait(0.3)
         startOrbit()
     elseif settings.headStomp then
-        task.wait(0.3)
         startHeadStomp()
     end
 end)
 
-print("✅ ORBIT BY NHẬT - FIX: SPAM LIÊN TỤC KHÔNG NGỪNG!")
+print("✅ ORBIT BY NHẬT - SPAM LIÊN TỤC KHÔNG NGỪNG!")
