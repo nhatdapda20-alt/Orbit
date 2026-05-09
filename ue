@@ -5512,9 +5512,9 @@ local function initialize(Library)
     -- ── Animation Player ─────────────────────────────────────
     local ANIM_IDS = {
         ["default"]     = nil,
-        ["solar system"]= "rbxassetid://616064005",
-        ["front flip"]  = "rbxassetid://754610312",
-        ["back flip"]   = "rbxassetid://754614534",
+        ["solar system"]= "rbxassetid://507770239",
+        ["front flip"]  = "rbxassetid://282574440",
+        ["back flip"]   = "rbxassetid://282574440",
         ["wave"]        = "rbxassetid://507770239",
         ["dab"]         = "rbxassetid://508409693",
         ["tilt"]        = "rbxassetid://507779680",
@@ -5589,6 +5589,59 @@ local function initialize(Library)
         table.insert(bodySpinConns, conn)
     end
 
+    -- Solar System: các bộ phận quay quanh torso như hành tinh
+    local solarActive = false
+    local solarConns = {}
+
+    local function stopSolar()
+        solarActive = false
+        for _, c in ipairs(solarConns) do pcall(function() c:Disconnect() end) end
+        solarConns = {}
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("Motor6D") then p.Enabled = true end
+        end
+    end
+
+    local function startSolar()
+        stopSolar()
+        local char = LocalPlayer.Character
+        if not char then return end
+        solarActive = true
+        local orbitParts = {
+            {name="Head", radius=4, speed=2, yOffset=2, phase=0},
+            {name="LeftUpperArm", radius=5, speed=1.5, yOffset=1, phase=math.pi/2},
+            {name="RightUpperArm", radius=5, speed=1.5, yOffset=1, phase=math.pi},
+            {name="LeftUpperLeg", radius=4.5, speed=2.5, yOffset=-1, phase=math.pi*1.5},
+            {name="RightUpperLeg", radius=4.5, speed=2.5, yOffset=-1, phase=0.5},
+            {name="LowerTorso", radius=2, speed=3, yOffset=0, phase=math.pi/4},
+        }
+        local angles = {}
+        for _, o in ipairs(orbitParts) do angles[o.name] = o.phase end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("Motor6D") then p.Enabled = false end
+        end
+        local conn = RunService.RenderStepped:Connect(function(dt)
+            if not solarActive then return end
+            local c2 = LocalPlayer.Character
+            if not c2 then return end
+            local torso = c2:FindFirstChild("UpperTorso") or c2:FindFirstChild("HumanoidRootPart")
+            if not torso then return end
+            for _, o in ipairs(orbitParts) do
+                local part = c2:FindFirstChild(o.name)
+                if part and part:IsA("BasePart") then
+                    angles[o.name] = (angles[o.name] or 0) + dt * o.speed
+                    local x = math.cos(angles[o.name]) * o.radius
+                    local z = math.sin(angles[o.name]) * o.radius
+                    part.CFrame = torso.CFrame * CFrame.new(x, o.yOffset, z)
+                        * CFrame.Angles(angles[o.name], angles[o.name] * 0.5, 0)
+                end
+            end
+        end)
+        table.insert(solarConns, conn)
+    end
+
     local function playAnim()
         stopAnim()
         local char = LocalPlayer.Character
@@ -5602,6 +5655,10 @@ local function initialize(Library)
         local animId = (customId and customId ~= "") and ("rbxassetid://" .. customId:gsub("rbxassetid://",""))
                     or ANIM_IDS[selected]
 
+        if selected == "solar system" then
+            startSolar()
+            return
+        end
         if selected == "body spin" then
             startBodySpin()
             return
@@ -5646,6 +5703,7 @@ local function initialize(Library)
         else
             stopAnim()
             stopBodySpin()
+            stopSolar()
         end
     end)
 
@@ -6040,7 +6098,7 @@ local function initialize(Library)
         return bestPart
     end
 
-    -- RAGE: tele HRP server-side lên đầu địch, camera giữ nguyên
+    -- RAGE: tele HRP server-side lên đầu địch, camera HOÀN TOÀN giữ nguyên
     local function doRage()
         local char = LocalPlayer.Character
         if not char then return end
@@ -6050,69 +6108,84 @@ local function initialize(Library)
         local targetPart = getTarget()
         if not targetPart then return end
 
-        -- Lưu camera CFrame để không bị ảnh hưởng
         local cam = workspace.CurrentCamera
-        local camCF = cam.CFrame
-        local camMode = cam.CameraType
 
-        -- Tele HRP lên đầu địch (server thấy mình ở đó, client thấy bth)
-        local targetCF = CFrame.new(targetPart.Position + Vector3.new(0, 3, 0))
-
-        -- Disable camera lock tạm thời
+        -- Lock camera trước khi tele
         cam.CameraType = Enum.CameraType.Scriptable
-        cam.CFrame = camCF -- giữ nguyên góc nhìn
+        local savedCamCF = cam.CFrame
 
-        -- Tele server-side
-        hrp.CFrame = targetCF
+        -- Tele HRP lên đầu địch (server thấy mình ở đó)
+        hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 3, 0))
 
-        -- Set silent aim target
+        -- Giữ camera ở vị trí cũ ngay lập tức
+        cam.CFrame = savedCamCF
+
+        -- Set silent aim
         State.manipulation.targetPosition = targetPart.Position
 
-        -- Restore camera ngay lập tức
+        -- Restore camera type sau 1 frame
         task.defer(function()
-            cam.CameraType = camMode
+            cam.CFrame = savedCamCF
+            cam.CameraType = Enum.CameraType.Custom
         end)
     end
 
-    -- VOID SPAM: HRP bay loạn xạ, địch không lock được
+    -- VOID SPAM: HRP bay loạn xạ server-side, camera HOÀN TOÀN độc lập
     local function startVoidSpam()
         if voidConn then voidConn:Disconnect(); voidConn = nil end
         if not voidActive then return end
 
+        local cam = workspace.CurrentCamera
+        -- Lock camera hoàn toàn ngay từ đầu
+        cam.CameraType = Enum.CameraType.Scriptable
+        local lockedCamCF = cam.CFrame
+
+        -- Cập nhật locked cam theo rotation của player (WASD nhìn quanh được)
+        local camUpdateConn = RunService.RenderStepped:Connect(function()
+            if not voidActive then return end
+            -- Chỉ giữ position, cho phép rotation
+            lockedCamCF = CFrame.new(lockedCamCF.Position) * (cam.CFrame - cam.CFrame.Position)
+            cam.CFrame = lockedCamCF
+        end)
+
         local voidPositions = {
-            Vector3.new(0, 1000, 0),
-            Vector3.new(1000, 0, 0),
-            Vector3.new(-1000, 0, 0),
-            Vector3.new(0, -1000, 0),
-            Vector3.new(500, 500, 500),
-            Vector3.new(-500, 500, -500),
+            Vector3.new(0, 2000, 0),
+            Vector3.new(2000, 500, 0),
+            Vector3.new(-2000, 500, 0),
+            Vector3.new(0, -2000, 0),
+            Vector3.new(1000, 1000, 1000),
+            Vector3.new(-1000, 1000, -1000),
+            Vector3.new(0, 500, 2000),
+            Vector3.new(0, 500, -2000),
         }
         local voidIdx = 0
 
         voidConn = RunService.Heartbeat:Connect(function()
             pcall(function()
-                if not voidActive then return end
+                if not voidActive then
+                    camUpdateConn:Disconnect()
+                    cam.CameraType = Enum.CameraType.Custom
+                    return
+                end
                 local char = LocalPlayer.Character
                 if not char then return end
                 local hrp = char:FindFirstChild("HumanoidRootPart")
                 if not hrp then return end
 
-                local cam = workspace.CurrentCamera
-                local camCF = cam.CFrame
-
-                -- Bay đến vị trí random
+                -- Spam HRP đến vị trí random (server thấy, client không thấy)
                 voidIdx = (voidIdx % #voidPositions) + 1
-                local offset = voidPositions[voidIdx]
-                hrp.CFrame = CFrame.new(hrp.Position + offset)
-
-                -- Giữ camera
-                cam.CameraType = Enum.CameraType.Scriptable
-                cam.CFrame = camCF
-                task.defer(function()
-                    cam.CameraType = Enum.CameraType.Custom
-                end)
+                hrp.CFrame = CFrame.new(voidPositions[voidIdx])
             end)
-            task.wait(0.05)
+            task.wait(0.03) -- nhanh hơn để địch không lock được
+        end)
+    end
+
+    local function stopVoidSpam()
+        voidActive = false
+        if voidConn then voidConn:Disconnect(); voidConn = nil end
+        -- Restore camera
+        pcall(function()
+            workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
         end)
     end
 
@@ -6136,16 +6209,14 @@ local function initialize(Library)
                     voidActive = true
                     startVoidSpam()
                     task.wait(5) -- void 5 giây
-                    voidActive = false
-                    if voidConn then voidConn:Disconnect(); voidConn = nil end
+                    stopVoidSpam()
 
                     -- Restore character về vị trí bình thường
                     pcall(function()
                         local char = LocalPlayer.Character
                         local hrp = char and char:FindFirstChild("HumanoidRootPart")
                         if hrp then
-                            local cam = workspace.CurrentCamera
-                            hrp.CFrame = CFrame.new(cam.CFrame.Position - Vector3.new(0, 3, 0))
+                            hrp.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position - Vector3.new(0, 3, 0))
                         end
                     end)
 
@@ -6205,13 +6276,8 @@ local function initialize(Library)
                 startFirerate()
             else
                 rageActive = false
-                voidActive = false
-                if voidConn then voidConn:Disconnect(); voidConn = nil end
+                stopVoidSpam()
                 if firerateConn then firerateConn:Disconnect(); firerateConn = nil end
-                -- Restore camera
-                pcall(function()
-                    workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-                end)
             end
         end)
     end
