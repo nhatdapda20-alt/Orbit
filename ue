@@ -5586,14 +5586,16 @@ local function initialize(Library)
         table.insert(bodySpinConns, conn)
     end
 
-    -- Solar System: các bộ phận quay quanh torso như hành tinh
+    -- Solar System: đầu đứng yên, các part khác quay quanh torso như hành tinh
     local solarActive = false
     local solarConns = {}
+    local solarOrigMotors = {}
 
     local function stopSolar()
         solarActive = false
         for _, c in ipairs(solarConns) do pcall(function() c:Disconnect() end) end
         solarConns = {}
+        solarOrigMotors = {}
     end
 
     local function startSolar()
@@ -5601,34 +5603,53 @@ local function initialize(Library)
         local char = LocalPlayer.Character
         if not char then return end
         solarActive = true
-        local orbitParts = {
-            {name="Head", radius=4, speed=2, yOffset=2, phase=0},
-            {name="LeftUpperArm", radius=5, speed=1.5, yOffset=1, phase=math.pi/2},
-            {name="RightUpperArm", radius=5, speed=1.5, yOffset=1, phase=math.pi},
-            {name="LeftUpperLeg", radius=4.5, speed=2.5, yOffset=-1, phase=math.pi*1.5},
-            {name="RightUpperLeg", radius=4.5, speed=2.5, yOffset=-1, phase=0.5},
-            {name="LowerTorso", radius=2, speed=3, yOffset=0, phase=math.pi/4},
+
+        -- Cấu hình từng part: radius (khoảng cách), speed (tốc độ), yOffset (cao thấp), phase (góc bắt đầu)
+        local orbitConfig = {
+            { name = "LeftUpperArm",  radius = 3.5, speed = 2.0, yOffset =  1.0, phase = 0 },
+            { name = "RightUpperArm", radius = 3.5, speed = 2.0, yOffset =  1.0, phase = math.pi },
+            { name = "LeftLowerArm",  radius = 4.5, speed = 1.5, yOffset =  0.0, phase = math.pi/2 },
+            { name = "RightLowerArm", radius = 4.5, speed = 1.5, yOffset =  0.0, phase = math.pi*1.5 },
+            { name = "LeftHand",      radius = 5.5, speed = 1.2, yOffset = -0.5, phase = math.pi/3 },
+            { name = "RightHand",     radius = 5.5, speed = 1.2, yOffset = -0.5, phase = math.pi*1.3 },
+            { name = "UpperTorso",    radius = 1.5, speed = 3.0, yOffset =  0.0, phase = math.pi/4 },
+            { name = "LowerTorso",    radius = 2.0, speed = 2.5, yOffset = -0.5, phase = math.pi*0.75 },
+            { name = "LeftUpperLeg",  radius = 3.0, speed = 2.0, yOffset = -2.0, phase = 0.3 },
+            { name = "RightUpperLeg", radius = 3.0, speed = 2.0, yOffset = -2.0, phase = math.pi+0.3 },
+            { name = "LeftLowerLeg",  radius = 4.0, speed = 1.8, yOffset = -3.0, phase = 0.8 },
+            { name = "RightLowerLeg", radius = 4.0, speed = 1.8, yOffset = -3.0, phase = math.pi+0.8 },
+            { name = "LeftFoot",      radius = 4.8, speed = 1.5, yOffset = -4.0, phase = 1.2 },
+            { name = "RightFoot",     radius = 4.8, speed = 1.5, yOffset = -4.0, phase = math.pi+1.2 },
         }
+
+        -- Khởi tạo góc ban đầu
         local angles = {}
-        for _, o in ipairs(orbitParts) do angles[o.name] = o.phase end
-        -- KHÔNG disable Motor6D
+        for _, cfg in ipairs(orbitConfig) do
+            angles[cfg.name] = cfg.phase
+        end
+
         local conn = RunService.RenderStepped:Connect(function(dt)
             if not solarActive then return end
             local c2 = LocalPlayer.Character
             if not c2 then return end
-            local torso = c2:FindFirstChild("UpperTorso") or c2:FindFirstChild("HumanoidRootPart")
-            if not torso then return end
-            -- Center point luôn là vị trí torso hiện tại
-            local centerPos = torso.Position
-            for _, o in ipairs(orbitParts) do
-                local part = c2:FindFirstChild(o.name)
+
+            -- Tâm quay = vị trí Head (đầu đứng yên, body quay quanh)
+            local head = c2:FindFirstChild("Head")
+            if not head then return end
+            local centerPos = head.Position + Vector3.new(0, -2, 0) -- hơi thấp hơn đầu 1 chút
+
+            for _, cfg in ipairs(orbitConfig) do
+                local part = c2:FindFirstChild(cfg.name)
                 if part and part:IsA("BasePart") then
-                    angles[o.name] = (angles[o.name] or 0) + dt * o.speed
-                    local x = math.cos(angles[o.name]) * o.radius
-                    local z = math.sin(angles[o.name]) * o.radius
-                    -- Offset tương đối so với centerPos
-                    part.CFrame = CFrame.new(centerPos + Vector3.new(x, o.yOffset, z))
-                        * CFrame.Angles(angles[o.name], angles[o.name] * 0.5, 0)
+                    angles[cfg.name] = angles[cfg.name] + dt * cfg.speed
+                    local a = angles[cfg.name]
+                    local x = math.cos(a) * cfg.radius
+                    local z = math.sin(a) * cfg.radius
+                    part.CFrame = CFrame.new(
+                        centerPos.X + x,
+                        centerPos.Y + cfg.yOffset,
+                        centerPos.Z + z
+                    ) * CFrame.Angles(a, a * 0.5, a * 0.3)
                 end
             end
         end)
