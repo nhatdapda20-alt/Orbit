@@ -6071,140 +6071,45 @@ local function initialize(Library)
 
 
     -- ================================================================
-    -- RAGEBOT + VOID SPAM (rewritten)
     -- ================================================================
-
-    local rageActive = false
-    local rageConn = nil
-    local backstabConn = nil
-
-    -- Tìm target gần camera nhất
-    local function getTarget()
-        local cam = workspace.CurrentCamera
-        local priority = Options.ragebot_priority_targets and Options.ragebot_priority_targets.Value or "Head"
-        local bestDist = math.huge
-        local bestPart = nil
-
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player == LocalPlayer then continue end
-            local char = player.Character
-            if not char then continue end
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if not hum or hum.Health <= 0 then continue end
-
-            local part
-            if priority == "Head" then
-                part = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
-            elseif priority == "Body" then
-                part = char:FindFirstChild("HumanoidRootPart")
-            else
-                local best, bd = nil, math.huge
-                for _, p in ipairs(char:GetChildren()) do
-                    if p:IsA("BasePart") then
-                        local d = (cam.CFrame.Position - p.Position).Magnitude
-                        if d < bd then bd = d; best = p end
-                    end
-                end
-                part = best
-            end
-
-            if not part then continue end
-            local d = (cam.CFrame.Position - part.Position).Magnitude
-            if d < bestDist then bestDist = d; bestPart = part end
-        end
-
-        return bestPart
-    end
-
-    -- RAGE: tele HRP server-side lên đầu địch, camera HOÀN TOÀN giữ nguyên
-    local function doRage()
-        local char = LocalPlayer.Character
-        if not char then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-
-        local targetPart = getTarget()
-        if not targetPart then return end
-
-        local cam = workspace.CurrentCamera
-
-        -- Lock camera trước khi tele
-        cam.CameraType = Enum.CameraType.Scriptable
-        local savedCamCF = cam.CFrame
-
-        -- Tele HRP lên đầu địch (server thấy mình ở đó)
-        hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 3, 0))
-
-        -- Giữ camera ở vị trí cũ ngay lập tức
-        cam.CFrame = savedCamCF
-
-        -- Set silent aim
-        State.manipulation.targetPosition = targetPart.Position
-
-        -- Restore camera type sau 1 frame
-        task.defer(function()
-            cam.CFrame = savedCamCF
-            cam.CameraType = Enum.CameraType.Custom
-        end)
-    end
-
-    -- VOID SPAM (từ void_spam.lua)
-    local voidActive = false
-    local voidHrp = nil
-    local voidClientCF = nil
-    local voidClientV = nil
-    local voidClientVA = nil
+    -- VOID SPAM (offset X/Z cực xa từ message (3).txt)
+    -- ================================================================
+    local voidActive    = false
+    local voidHrp       = nil
+    local voidClientCF  = nil
+    local voidClientV   = nil
+    local voidClientVA  = nil
     local voidHeartbeat = nil
-    local voidRenderStep = nil
-
-    local function betterRandom(mi, ma, dmi, dma)
-        local val = math.random(mi, ma)
-        repeat
-            val = math.random(mi, ma)
-        until val < dmi or val > dma
-        return val
-    end
 
     local function startVoidSpam()
         if not voidActive then return end
-        local char = LocalPlayer.Character
-        if not char then return end
-        voidHrp = char:FindFirstChild("HumanoidRootPart")
+        local char2 = LocalPlayer.Character
+        if not char2 then return end
+        voidHrp = char2:FindFirstChild("HumanoidRootPart")
         if not voidHrp then return end
 
-        -- Lưu trạng thái client
         voidClientCF = voidHrp.CFrame
         voidClientV  = voidHrp.AssemblyLinearVelocity
         voidClientVA = voidHrp.AssemblyAngularVelocity
 
-        -- Heartbeat: spam HRP đến tọa độ cực xa ngẫu nhiên (server thấy)
         voidHeartbeat = RunService.Heartbeat:Connect(function()
             pcall(function()
                 if not voidActive then return end
-                local hrp = voidHrp
-                if not hrp or not hrp.Parent then return end
-                voidClientCF = hrp.CFrame
-                voidClientV  = hrp.AssemblyLinearVelocity
-                voidClientVA = hrp.AssemblyAngularVelocity
-                hrp.CFrame = CFrame.new(
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
-                ) * CFrame.Angles(math.rad(math.pi), math.rad(math.pi), math.rad(math.pi))
-                hrp.AssemblyLinearVelocity = Vector3.new(
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
+                local hrp2 = voidHrp
+                if not hrp2 or not hrp2.Parent then return end
+                voidClientCF = hrp2.CFrame
+                voidClientV  = hrp2.AssemblyLinearVelocity
+                voidClientVA = hrp2.AssemblyAngularVelocity
+                local pos2 = hrp2.Position
+                hrp2.CFrame = CFrame.new(
+                    pos2.X + (-1489021035.808403),
+                    pos2.Y,
+                    pos2.Z + 1547417969.8282743
                 )
-                hrp.AssemblyAngularVelocity = Vector3.new(
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
-                )
+                task.wait(0)
             end)
         end)
 
-        -- RenderStepped First: restore HRP về vị trí client ngay trước khi render (client thấy đứng yên)
         RunService:BindToRenderStep("ue_void_sync", Enum.RenderPriority.First.Value, function()
             if not voidActive then
                 RunService:UnbindFromRenderStep("ue_void_sync")
@@ -6212,7 +6117,7 @@ local function initialize(Library)
             end
             if voidHrp and voidClientCF then
                 pcall(function()
-                    voidHrp.CFrame = voidClientCF
+                    voidHrp.CFrame                  = voidClientCF
                     voidHrp.AssemblyLinearVelocity  = voidClientV
                     voidHrp.AssemblyAngularVelocity = voidClientVA
                 end)
@@ -6224,65 +6129,106 @@ local function initialize(Library)
         voidActive = false
         if voidHeartbeat then voidHeartbeat:Disconnect(); voidHeartbeat = nil end
         pcall(function() RunService:UnbindFromRenderStep("ue_void_sync") end)
-        voidHrp = nil
+        voidHrp     = nil
         voidClientCF = nil
     end
 
-    -- RAGE loop: tele lên đầu địch, nếu bị hit thì void 5s rồi tele lại
+    -- ================================================================
+    -- RAGEBOT (logic từ ragebot_4__1_.txt: lookAt backstab + void spam)
+    -- ================================================================
+    local rageActive      = false
     local rageLoopRunning = false
+    local backstabConn    = nil
+    local firerateConn    = nil
+
+    local function getTarget()
+        local cam      = workspace.CurrentCamera
+        local priority = Options.ragebot_priority_targets and Options.ragebot_priority_targets.Value or "Head"
+        local bestDist = math.huge
+        local bestPart = nil
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            local ch = player.Character
+            if not ch then continue end
+            local hm = ch:FindFirstChildOfClass("Humanoid")
+            if not hm or hm.Health <= 0 then continue end
+            local part
+            if priority == "Head" then
+                part = ch:FindFirstChild("Head") or ch:FindFirstChild("HumanoidRootPart")
+            elseif priority == "Body" then
+                part = ch:FindFirstChild("HumanoidRootPart")
+            else
+                local best, bd = nil, math.huge
+                for _, p in ipairs(ch:GetChildren()) do
+                    if p:IsA("BasePart") then
+                        local d = (cam.CFrame.Position - p.Position).Magnitude
+                        if d < bd then bd = d; best = p end
+                    end
+                end
+                part = best
+            end
+            if not part then continue end
+            local d = (cam.CFrame.Position - part.Position).Magnitude
+            if d < bestDist then bestDist = d; bestPart = part end
+        end
+        return bestPart
+    end
+
+    -- Backstab attack: CFrame.lookAt đứng sau địch (từ ragebot_4__1_.txt dòng 143)
+    local function doRageAttack()
+        local ch2 = LocalPlayer.Character
+        if not ch2 then return end
+        local myHRP = ch2:FindFirstChild("HumanoidRootPart")
+        if not myHRP then return end
+        local targetPart = getTarget()
+        if not targetPart then return end
+        -- Đứng sau địch 4 studs, nhìn thẳng vào địch
+        local behindPos = targetPart.Position - targetPart.CFrame.LookVector * 4
+        myHRP.CFrame = CFrame.lookAt(behindPos, targetPart.Position)
+        State.manipulation.targetPosition = targetPart.Position
+    end
+
     local function startRageLoop()
         if rageLoopRunning then return end
         rageLoopRunning = true
-
         task.spawn(function()
             while rageActive do
-                -- Tele lên đầu địch
-                pcall(doRage)
-
-                -- Giữ ở đó để bắn
-                local shootTime = Options.ragebot_attack_delay and Options.ragebot_attack_delay.Value or 0.05
-                task.wait(shootTime)
-
-                -- Void spam ngắn để tránh bị hit lại
+                pcall(doRageAttack)
+                local attackDelay = Options.ragebot_attack_delay and Options.ragebot_attack_delay.Value or 0.05
+                task.wait(attackDelay)
                 if Toggles.ragebot_void_spam and Toggles.ragebot_void_spam.Value then
                     voidActive = true
                     startVoidSpam()
                     local hideTime = Options.ragebot_void_spam_hide and Options.ragebot_void_spam_hide.Value or 0.07
                     task.wait(hideTime)
                     stopVoidSpam()
-                    task.wait(0.1)
+                    task.wait(0.05)
                 else
-                    task.wait(0.1)
+                    task.wait(0.05)
                 end
-
                 if not rageActive then break end
             end
             rageLoopRunning = false
         end)
     end
 
-    -- Backstab: xoay lưng về phía target
     local function startBackstab()
         if backstabConn then backstabConn:Disconnect(); backstabConn = nil end
         if not (Toggles.ragebot_always_backstab and Toggles.ragebot_always_backstab.Value) then return end
-
         backstabConn = RunService.Heartbeat:Connect(function()
             pcall(function()
                 if not (Toggles.ragebot_always_backstab and Toggles.ragebot_always_backstab.Value) then return end
                 local targetPart = getTarget()
                 if not targetPart then return end
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end
-                local dir = (targetPart.Position - hrp.Position)
-                dir = Vector3.new(dir.X, 0, dir.Z).Unit
-                hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + dir) * CFrame.Angles(0, math.pi, 0)
+                local ch3 = LocalPlayer.Character
+                local myHRP = ch3 and ch3:FindFirstChild("HumanoidRootPart")
+                if not myHRP then return end
+                local behind = targetPart.Position - targetPart.CFrame.LookVector * 4
+                myHRP.CFrame = CFrame.lookAt(behind, targetPart.Position)
             end)
         end)
     end
 
-    -- Firerate
-    local firerateConn = nil
     local function startFirerate()
         if firerateConn then firerateConn:Disconnect(); firerateConn = nil end
         if not (Toggles.ragebot_enabled and Toggles.ragebot_enabled.Value) then return end
@@ -6297,7 +6243,6 @@ local function initialize(Library)
         end)
     end
 
-    -- OnChanged handlers
     if Toggles.ragebot_enabled then
         Toggles.ragebot_enabled:OnChanged(function()
             rageActive = Toggles.ragebot_enabled.Value
@@ -6323,6 +6268,7 @@ local function initialize(Library)
             end
         end)
     end
+
 
     SaveManager:LoadAutoloadConfig()
 
