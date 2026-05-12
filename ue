@@ -5586,7 +5586,7 @@ local function initialize(Library)
         table.insert(bodySpinConns, conn)
     end
 
-    -- Solar System: đầu đứng yên, các part khác quay quanh torso như hành tinh
+    -- Solar System: từng part bay theo vòng tròn quanh nhân vật, vừa bay vừa tự xoay
     local solarActive = false
     local solarConns = {}
     local solarOrigMotors = {}
@@ -5604,52 +5604,58 @@ local function initialize(Library)
         if not char then return end
         solarActive = true
 
-        -- Cấu hình từng part: radius (khoảng cách), speed (tốc độ), yOffset (cao thấp), phase (góc bắt đầu)
-        local orbitConfig = {
-            { name = "LeftUpperArm",  radius = 3.5, speed = 2.0, yOffset =  1.0, phase = 0 },
-            { name = "RightUpperArm", radius = 3.5, speed = 2.0, yOffset =  1.0, phase = math.pi },
-            { name = "LeftLowerArm",  radius = 4.5, speed = 1.5, yOffset =  0.0, phase = math.pi/2 },
-            { name = "RightLowerArm", radius = 4.5, speed = 1.5, yOffset =  0.0, phase = math.pi*1.5 },
-            { name = "LeftHand",      radius = 5.5, speed = 1.2, yOffset = -0.5, phase = math.pi/3 },
-            { name = "RightHand",     radius = 5.5, speed = 1.2, yOffset = -0.5, phase = math.pi*1.3 },
-            { name = "UpperTorso",    radius = 1.5, speed = 3.0, yOffset =  0.0, phase = math.pi/4 },
-            { name = "LowerTorso",    radius = 2.0, speed = 2.5, yOffset = -0.5, phase = math.pi*0.75 },
-            { name = "LeftUpperLeg",  radius = 3.0, speed = 2.0, yOffset = -2.0, phase = 0.3 },
-            { name = "RightUpperLeg", radius = 3.0, speed = 2.0, yOffset = -2.0, phase = math.pi+0.3 },
-            { name = "LeftLowerLeg",  radius = 4.0, speed = 1.8, yOffset = -3.0, phase = 0.8 },
-            { name = "RightLowerLeg", radius = 4.0, speed = 1.8, yOffset = -3.0, phase = math.pi+0.8 },
-            { name = "LeftFoot",      radius = 4.8, speed = 1.5, yOffset = -4.0, phase = 1.2 },
-            { name = "RightFoot",     radius = 4.8, speed = 1.5, yOffset = -4.0, phase = math.pi+1.2 },
+        -- Mỗi part: r=bán kính orbit, spd=tốc độ bay, ph=phase bắt đầu, tilt=góc nghiêng mặt phẳng orbit, oy=độ cao
+        local orbits = {
+            { name="Head",          r=2.5, spd=1.2, ph=0,              tilt=0,           oy= 3   },
+            { name="UpperTorso",    r=3.0, spd=1.5, ph=math.pi/3,      tilt=math.pi/6,   oy= 1   },
+            { name="LowerTorso",    r=3.0, spd=1.5, ph=math.pi*1.3,    tilt=-math.pi/6,  oy= 0   },
+            { name="LeftUpperArm",  r=4.0, spd=2.0, ph=0,              tilt=math.pi/4,   oy= 1   },
+            { name="RightUpperArm", r=4.0, spd=2.0, ph=math.pi,        tilt=-math.pi/4,  oy= 1   },
+            { name="LeftLowerArm",  r=5.0, spd=1.8, ph=math.pi/2,      tilt=math.pi/3,   oy= 0   },
+            { name="RightLowerArm", r=5.0, spd=1.8, ph=math.pi*1.5,    tilt=-math.pi/3,  oy= 0   },
+            { name="LeftHand",      r=5.8, spd=2.2, ph=math.pi/4,      tilt=math.pi/5,   oy=-0.5 },
+            { name="RightHand",     r=5.8, spd=2.2, ph=math.pi*1.25,   tilt=-math.pi/5,  oy=-0.5 },
+            { name="LeftUpperLeg",  r=3.5, spd=1.6, ph=math.pi/6,      tilt=math.pi/2.5, oy=-2   },
+            { name="RightUpperLeg", r=3.5, spd=1.6, ph=math.pi*1.17,   tilt=-math.pi/2.5,oy=-2   },
+            { name="LeftLowerLeg",  r=4.5, spd=1.4, ph=math.pi*0.6,    tilt=math.pi/2,   oy=-3.5 },
+            { name="RightLowerLeg", r=4.5, spd=1.4, ph=math.pi*1.6,    tilt=-math.pi/2,  oy=-3.5 },
+            { name="LeftFoot",      r=5.2, spd=1.3, ph=math.pi*0.8,    tilt=math.pi/2,   oy=-5   },
+            { name="RightFoot",     r=5.2, spd=1.3, ph=math.pi*1.8,    tilt=-math.pi/2,  oy=-5   },
         }
 
-        -- Khởi tạo góc ban đầu
         local angles = {}
-        for _, cfg in ipairs(orbitConfig) do
-            angles[cfg.name] = cfg.phase
+        local spinAngles = {}
+        for _, o in ipairs(orbits) do
+            angles[o.name]     = o.ph
+            spinAngles[o.name] = 0
         end
 
         local conn = RunService.RenderStepped:Connect(function(dt)
             if not solarActive then return end
             local c2 = LocalPlayer.Character
             if not c2 then return end
+            local root = c2:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            local center = root.Position
 
-            -- Tâm quay = vị trí Head (đầu đứng yên, body quay quanh)
-            local head = c2:FindFirstChild("Head")
-            if not head then return end
-            local centerPos = head.Position + Vector3.new(0, -2, 0) -- hơi thấp hơn đầu 1 chút
-
-            for _, cfg in ipairs(orbitConfig) do
-                local part = c2:FindFirstChild(cfg.name)
+            for _, o in ipairs(orbits) do
+                local part = c2:FindFirstChild(o.name)
                 if part and part:IsA("BasePart") then
-                    angles[cfg.name] = angles[cfg.name] + dt * cfg.speed
-                    local a = angles[cfg.name]
-                    local x = math.cos(a) * cfg.radius
-                    local z = math.sin(a) * cfg.radius
-                    part.CFrame = CFrame.new(
-                        centerPos.X + x,
-                        centerPos.Y + cfg.yOffset,
-                        centerPos.Z + z
-                    ) * CFrame.Angles(a, a * 0.5, a * 0.3)
+                    angles[o.name]     = angles[o.name]     + dt * o.spd
+                    spinAngles[o.name] = spinAngles[o.name] + dt * o.spd * 3
+
+                    local a = angles[o.name]
+
+                    -- Tính vị trí orbit trên mặt phẳng nghiêng (tilt)
+                    local x = math.cos(a) * o.r
+                    local z = math.sin(a) * o.r
+                    -- Xoay theo tilt (nghiêng mặt phẳng orbit)
+                    local y = z * math.sin(o.tilt) + o.oy
+                    z       = z * math.cos(o.tilt)
+
+                    local worldPos = center + Vector3.new(x, y, z)
+                    local s = spinAngles[o.name]
+                    part.CFrame = CFrame.new(worldPos) * CFrame.Angles(s, s * 0.7, s * 0.4)
                 end
             end
         end)
@@ -6069,9 +6075,7 @@ local function initialize(Library)
     -- ================================================================
 
     local rageActive = false
-    local voidActive = false
     local rageConn = nil
-    local voidConn = nil
     local backstabConn = nil
 
     -- Tìm target gần camera nhất
@@ -6144,84 +6148,84 @@ local function initialize(Library)
         end)
     end
 
-    -- VOID SPAM: 
-    -- - Visual: nhân vật + camera giữ nguyên tại chỗ (client thấy đứng yên)
-    -- - Server: HRP spam đến vị trí xa ngẫu nhiên (địch không lock được)
+    -- VOID SPAM (từ void_spam.lua)
+    local voidActive = false
+    local voidHrp = nil
+    local voidClientCF = nil
+    local voidClientV = nil
+    local voidClientVA = nil
+    local voidHeartbeat = nil
+    local voidRenderStep = nil
+
+    local function betterRandom(mi, ma, dmi, dma)
+        local val = math.random(mi, ma)
+        repeat
+            val = math.random(mi, ma)
+        until val < dmi or val > dma
+        return val
+    end
+
     local function startVoidSpam()
-        if voidConn then voidConn:Disconnect(); voidConn = nil end
         if not voidActive then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        voidHrp = char:FindFirstChild("HumanoidRootPart")
+        if not voidHrp then return end
 
-        local cam = workspace.CurrentCamera
-        local char0 = LocalPlayer.Character
-        local hrp0 = char0 and char0:FindFirstChild("HumanoidRootPart")
-        if not hrp0 then return end
+        -- Lưu trạng thái client
+        voidClientCF = voidHrp.CFrame
+        voidClientV  = voidHrp.AssemblyLinearVelocity
+        voidClientVA = voidHrp.AssemblyAngularVelocity
 
-        -- Lưu vị trí visual (client)
-        local visualCF = hrp0.CFrame
-        local visualCamCF = cam.CFrame
-
-        -- Lock camera
-        cam.CameraType = Enum.CameraType.Scriptable
-        cam.CFrame = visualCamCF
-
-        -- Vị trí spam xa (server thấy)
-        local spamPositions = {
-            Vector3.new(10000, 5000, 10000),
-            Vector3.new(-10000, 5000, 10000),
-            Vector3.new(10000, 5000, -10000),
-            Vector3.new(-10000, 5000, -10000),
-            Vector3.new(0, 50000, 0),
-            Vector3.new(50000, 0, 0),
-            Vector3.new(-50000, 0, 0),
-            Vector3.new(0, 0, 50000),
-        }
-        local spamIdx = 0
-
-        -- RenderStepped: restore visual position mỗi frame (client thấy đứng yên)
-        local renderConn = RunService.RenderStepped:Connect(function()
-            if not voidActive then return end
-            local char = LocalPlayer.Character
-            if not char then return end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-            -- Giữ camera
-            cam.CFrame = visualCamCF
+        -- Heartbeat: spam HRP đến tọa độ cực xa ngẫu nhiên (server thấy)
+        voidHeartbeat = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not voidActive then return end
+                local hrp = voidHrp
+                if not hrp or not hrp.Parent then return end
+                voidClientCF = hrp.CFrame
+                voidClientV  = hrp.AssemblyLinearVelocity
+                voidClientVA = hrp.AssemblyAngularVelocity
+                hrp.CFrame = CFrame.new(
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
+                ) * CFrame.Angles(math.rad(math.pi), math.rad(math.pi), math.rad(math.pi))
+                hrp.AssemblyLinearVelocity = Vector3.new(
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
+                )
+                hrp.AssemblyAngularVelocity = Vector3.new(
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
+                )
+            end)
         end)
 
-        -- Heartbeat: spam HRP server-side
-        voidConn = RunService.Heartbeat:Connect(function()
-            pcall(function()
-                if not voidActive then
-                    renderConn:Disconnect()
-                    cam.CameraType = Enum.CameraType.Custom
-                    return
-                end
-                local char = LocalPlayer.Character
-                if not char then return end
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end
-
-                -- Spam đến vị trí xa (server thấy)
-                spamIdx = (spamIdx % #spamPositions) + 1
-                hrp.CFrame = CFrame.new(spamPositions[spamIdx])
-
-                -- Ngay sau đó restore về visual position (client thấy)
-                task.defer(function()
-                    if hrp and hrp.Parent then
-                        hrp.CFrame = visualCF
-                    end
+        -- RenderStepped First: restore HRP về vị trí client ngay trước khi render (client thấy đứng yên)
+        RunService:BindToRenderStep("ue_void_sync", Enum.RenderPriority.First.Value, function()
+            if not voidActive then
+                RunService:UnbindFromRenderStep("ue_void_sync")
+                return
+            end
+            if voidHrp and voidClientCF then
+                pcall(function()
+                    voidHrp.CFrame = voidClientCF
+                    voidHrp.AssemblyLinearVelocity  = voidClientV
+                    voidHrp.AssemblyAngularVelocity = voidClientVA
                 end)
-            end)
-            task.wait(0.02)
+            end
         end)
     end
 
     local function stopVoidSpam()
         voidActive = false
-        if voidConn then voidConn:Disconnect(); voidConn = nil end
-        pcall(function()
-            workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-        end)
+        if voidHeartbeat then voidHeartbeat:Disconnect(); voidHeartbeat = nil end
+        pcall(function() RunService:UnbindFromRenderStep("ue_void_sync") end)
+        voidHrp = nil
+        voidClientCF = nil
     end
 
     -- RAGE loop: tele lên đầu địch, nếu bị hit thì void 5s rồi tele lại
@@ -6243,19 +6247,10 @@ local function initialize(Library)
                 if Toggles.ragebot_void_spam and Toggles.ragebot_void_spam.Value then
                     voidActive = true
                     startVoidSpam()
-                    task.wait(5) -- void 5 giây
+                    local hideTime = Options.ragebot_void_spam_hide and Options.ragebot_void_spam_hide.Value or 0.07
+                    task.wait(hideTime)
                     stopVoidSpam()
-
-                    -- Restore character về vị trí bình thường
-                    pcall(function()
-                        local char = LocalPlayer.Character
-                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            hrp.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position - Vector3.new(0, 3, 0))
-                        end
-                    end)
-
-                    task.wait(0.5)
+                    task.wait(0.1)
                 else
                     task.wait(0.1)
                 end
