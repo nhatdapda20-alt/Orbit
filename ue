@@ -6106,14 +6106,10 @@ local function initialize(Library)
 
 
     -- ================================================================
-    -- VOID SPAM (void_spam.lua — betterRandom + BindToRenderStep)
+    -- VOID SPAM (dùng api:set_fake từ UE docs)
     -- ================================================================
-    local voidActive   = false
-    local voidHrp      = nil
-    local voidClientC  = nil
-    local voidClientV  = nil
-    local voidClientVA = nil
-    local voidHB       = nil
+    local voidActive = false
+    local voidHB     = nil
 
     local function betterRandom(mi, ma, dmi, dma)
         local val = math.random(mi, ma)
@@ -6123,52 +6119,54 @@ local function initialize(Library)
     end
 
     local function startVoidSpam()
-        if not voidActive then return end
+        -- Stop cũ trước
+        if voidHB then voidHB:Disconnect(); voidHB = nil end
+        pcall(function() RunService:UnbindFromRenderStep("ue_void_sync") end)
+
         local char2 = LocalPlayer.Character
         if not char2 then return end
-        voidHrp = char2:FindFirstChild("HumanoidRootPart")
-        if not voidHrp then return end
+        local hrp = char2:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
 
-        -- Heartbeat: spam HRP đến tọa độ random cực xa
+        local clientC  = hrp.CFrame
+        local clientV  = hrp.AssemblyLinearVelocity
+        local clientVA = hrp.AssemblyAngularVelocity
+
+        -- Dùng api:set_fake để desync position (UE API)
+        pcall(function()
+            api:set_fake(true, clientC, true)
+        end)
+
+        -- Heartbeat: spam server position cực xa
         voidHB = RunService.Heartbeat:Connect(function()
             pcall(function()
                 if not voidActive then return end
-                local hrp2 = voidHrp
-                if not hrp2 or not hrp2.Parent then return end
-                voidClientC  = hrp2.CFrame
-                voidClientV  = hrp2.AssemblyLinearVelocity
-                voidClientVA = hrp2.AssemblyAngularVelocity
-                hrp2.CFrame = CFrame.new(
+                -- Cập nhật client position liên tục
+                clientC  = hrp.CFrame
+                clientV  = hrp.AssemblyLinearVelocity
+                clientVA = hrp.AssemblyAngularVelocity
+
+                -- Spam server qua set_desync_cframe (UE API)
+                api:set_desync_cframe(CFrame.new(
                     betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
                     betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
                     betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
-                ) * CFrame.Angles(math.rad(math.pi), math.rad(math.pi), math.rad(math.pi))
-                hrp2.AssemblyLinearVelocity = Vector3.new(
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
-                )
-                hrp2.AssemblyAngularVelocity = Vector3.new(
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
-                )
+                ))
             end)
         end)
 
-        -- BindToRenderStep First: restore về vị trí client ngay trước render
+        -- RenderStepped First: restore client visual
         RunService:BindToRenderStep("ue_void_sync", Enum.RenderPriority.First.Value, function()
             if not voidActive then
                 RunService:UnbindFromRenderStep("ue_void_sync")
+                pcall(function() api:set_fake(false) end)
                 return
             end
-            if voidHrp and voidClientC then
-                pcall(function()
-                    voidHrp.CFrame                  = voidClientC
-                    voidHrp.AssemblyLinearVelocity  = voidClientV
-                    voidHrp.AssemblyAngularVelocity = voidClientVA
-                end)
-            end
+            pcall(function()
+                hrp.CFrame                  = clientC
+                hrp.AssemblyLinearVelocity  = clientV
+                hrp.AssemblyAngularVelocity = clientVA
+            end)
         end)
     end
 
@@ -6176,7 +6174,7 @@ local function initialize(Library)
         voidActive = false
         if voidHB then voidHB:Disconnect(); voidHB = nil end
         pcall(function() RunService:UnbindFromRenderStep("ue_void_sync") end)
-        voidHrp = nil; voidClientC = nil
+        pcall(function() api:set_fake(false) end)
     end
 
     -- ================================================================
@@ -6238,7 +6236,7 @@ local function initialize(Library)
         end)
     end
 
-    -- Ragebot attack: tele sau địch + force_shoot
+    -- Ragebot attack: desync sau địch + force_shoot
     local function doRageAttack()
         local ch2 = LocalPlayer.Character
         if not ch2 then return end
@@ -6247,16 +6245,17 @@ local function initialize(Library)
         local targetPart = getTarget()
         if not targetPart then return end
 
-        -- Dùng api:teleport (từ docs) để tele sau địch
-        local behindPos = targetPart.Position - targetPart.CFrame.LookVector * 4
+        -- Tele server-side sau lưng địch dùng set_desync_cframe
+        local behindPos = targetPart.Position - targetPart.CFrame.LookVector * 3
+        local attackCF = CFrame.lookAt(behindPos, targetPart.Position)
         pcall(function()
-            api:teleport(CFrame.lookAt(behindPos, targetPart.Position))
+            api:set_desync_cframe(attackCF)
         end)
 
         -- Set silent aim target
         State.manipulation.targetPosition = targetPart.Position
 
-        -- Force shoot
+        -- Force shoot từ vị trí desync
         doForceShoot(targetPart)
     end
 
@@ -6277,11 +6276,11 @@ local function initialize(Library)
                     voidActive = true
                     startVoidSpam()
                     local hideTime = Options.ragebot_void_spam_hide and Options.ragebot_void_spam_hide.Value or 0.07
-                    task.wait(hideTime)
+                    task.wait(math.max(0.01, hideTime))
                     stopVoidSpam()
-                    task.wait(0.05)
+                    task.wait(0.03)
                 else
-                    task.wait(0.05)
+                    task.wait(0.03)
                 end
 
                 if not rageActive then break end
@@ -6302,10 +6301,9 @@ local function initialize(Library)
                 local ch3 = LocalPlayer.Character
                 local myHRP = ch3 and ch3:FindFirstChild("HumanoidRootPart")
                 if not myHRP then return end
-                local behind = targetPart.Position - targetPart.CFrame.LookVector * 4
-                pcall(function()
-                    api:teleport(CFrame.lookAt(behind, targetPart.Position))
-                end)
+                local behind = targetPart.Position - targetPart.CFrame.LookVector * 3
+                -- Dùng desync để backstab (server thấy sau lưng địch)
+                api:set_desync_cframe(CFrame.lookAt(behind, targetPart.Position))
             end)
         end)
     end
@@ -6357,13 +6355,39 @@ local function initialize(Library)
         end)
     end
 
-    -- Silent aim target update dùng api:get_target_cache
+    -- Silent aim: dùng api:force_shoot kết hợp với target cache
     RunService.Heartbeat:Connect(function()
-        if not (Toggles.aimbot_toggle and Toggles.aimbot_toggle.Value) then return end
         pcall(function()
-            local cache = api:get_target_cache("silent")
-            if cache and cache.part then
-                State.manipulation.targetPosition = cache.part.Position
+            -- Update target position cho silent aim hook
+            if Toggles.aimbot_toggle and Toggles.aimbot_toggle.Value then
+                local cache = api:get_target_cache("silent")
+                if cache and cache.part then
+                    State.manipulation.targetPosition = cache.part.Position
+                end
+            end
+
+            -- Silent force shoot nếu đang bắn và có target
+            if Toggles.silent_manipulation and Toggles.silent_manipulation.Value then
+                local ch3 = LocalPlayer.Character
+                if not ch3 then return end
+                local tool = ch3:FindFirstChildOfClass("Tool")
+                if not tool then return end
+                local handle = tool:FindFirstChild("Handle")
+                if not handle then return end
+                local myHRP = ch3:FindFirstChild("HumanoidRootPart")
+                if not myHRP then return end
+
+                local cache = api:get_target_cache("silent")
+                if cache and cache.part then
+                    local dist = (myHRP.Position - cache.part.Position).Magnitude
+                    if dist <= 200 then
+                        -- hitchance check
+                        local hc = Options.silent_hitchance and Options.silent_hitchance.Value or 100
+                        if math.random(1, 100) <= hc then
+                            api:force_shoot(handle, cache.part, myHRP.Position, cache.part.Position, false)
+                        end
+                    end
+                end
             end
         end)
     end)
