@@ -6070,103 +6070,77 @@ local function initialize(Library)
     -- ================================================================
 
 
+
     -- ================================================================
+    -- VOID SPAM dùng api:set_fake + api:set_desync_cframe (UE API)
     -- ================================================================
-    -- VOID SPAM (offset X/Z cực xa từ message (3).txt)
-    -- ================================================================
-    local voidActive    = false
-    local voidHrp       = nil
-    local voidClientCF  = nil
-    local voidClientV   = nil
-    local voidClientVA  = nil
-    local voidHeartbeat = nil
+    local voidActive = false
 
     local function startVoidSpam()
         if not voidActive then return end
-        local char2 = LocalPlayer.Character
-        if not char2 then return end
-        voidHrp = char2:FindFirstChild("HumanoidRootPart")
-        if not voidHrp then return end
-
-        voidClientCF = voidHrp.CFrame
-        voidClientV  = voidHrp.AssemblyLinearVelocity
-        voidClientVA = voidHrp.AssemblyAngularVelocity
-
-        voidHeartbeat = RunService.Heartbeat:Connect(function()
-            pcall(function()
-                if not voidActive then return end
-                local hrp2 = voidHrp
-                if not hrp2 or not hrp2.Parent then return end
-                voidClientCF = hrp2.CFrame
-                voidClientV  = hrp2.AssemblyLinearVelocity
-                voidClientVA = hrp2.AssemblyAngularVelocity
-                local pos2 = hrp2.Position
-                hrp2.CFrame = CFrame.new(
-                    pos2.X + (-1489021035.808403),
-                    pos2.Y,
-                    pos2.Z + 1547417969.8282743
-                )
-                task.wait(0)
-            end)
+        -- Dùng api:set_fake để tạo fake position (server thấy ở chỗ khác)
+        pcall(function()
+            api:set_fake(true)
         end)
-
-        RunService:BindToRenderStep("ue_void_sync", Enum.RenderPriority.First.Value, function()
-            if not voidActive then
-                RunService:UnbindFromRenderStep("ue_void_sync")
-                return
-            end
-            if voidHrp and voidClientCF then
-                pcall(function()
-                    voidHrp.CFrame                  = voidClientCF
-                    voidHrp.AssemblyLinearVelocity  = voidClientV
-                    voidHrp.AssemblyAngularVelocity = voidClientVA
-                end)
-            end
+        -- Dùng api:add_desync_callback để spam vị trí random mỗi frame
+        pcall(function()
+            api:add_desync_callback(10, function()
+                if not voidActive then return nil end
+                local char2 = LocalPlayer.Character
+                local hrp2  = char2 and char2:FindFirstChild("HumanoidRootPart")
+                if not hrp2 then return nil end
+                local pos = hrp2.Position
+                return CFrame.new(
+                    pos.X + (-1489021035.808403),
+                    pos.Y,
+                    pos.Z + 1547417969.8282743
+                )
+            end)
         end)
     end
 
     local function stopVoidSpam()
         voidActive = false
-        if voidHeartbeat then voidHeartbeat:Disconnect(); voidHeartbeat = nil end
-        pcall(function() RunService:UnbindFromRenderStep("ue_void_sync") end)
-        voidHrp     = nil
-        voidClientCF = nil
+        pcall(function() api:set_fake(false) end)
     end
 
     -- ================================================================
-    -- RAGEBOT (logic từ ragebot_4__1_.txt: lookAt backstab + void spam)
+    -- RAGEBOT dùng UE API (api:set_ragebot, api:force_shoot, api:get_target_cache)
     -- ================================================================
     local rageActive      = false
     local rageLoopRunning = false
     local backstabConn    = nil
     local firerateConn    = nil
 
+    -- Cache target từ UE API (update tự động, không cần poll)
+    local ragebotTargetCache = pcall(function() return api:get_target_cache("ragebot") end) and api:get_target_cache("ragebot") or {}
+    local aimbotTargetCache  = pcall(function() return api:get_target_cache("aimbot")  end) and api:get_target_cache("aimbot")  or {}
+    local silentTargetCache  = pcall(function() return api:get_target_cache("silent")  end) and api:get_target_cache("silent")  or {}
+
     local function getTarget()
-        local cam      = workspace.CurrentCamera
-        local priority = Options.ragebot_priority_targets and Options.ragebot_priority_targets.Value or "Head"
-        local bestDist = math.huge
-        local bestPart = nil
+        -- Ưu tiên dùng cache của UE API
+        local ok, cache = pcall(function() return api:get_target_cache("ragebot") end)
+        if ok and cache and cache.player then
+            local char2 = cache.player.Character
+            if char2 then
+                local priority = Options.ragebot_priority_targets and Options.ragebot_priority_targets.Value or "Head"
+                if priority == "Head" then
+                    return char2:FindFirstChild("Head") or char2:FindFirstChild("HumanoidRootPart")
+                else
+                    return cache.part or char2:FindFirstChild("HumanoidRootPart")
+                end
+            end
+        end
+        -- Fallback: tìm thủ công
+        local cam = workspace.CurrentCamera
+        local bestDist, bestPart = math.huge, nil
         for _, player in ipairs(Players:GetPlayers()) do
             if player == LocalPlayer then continue end
             local ch = player.Character
             if not ch then continue end
             local hm = ch:FindFirstChildOfClass("Humanoid")
             if not hm or hm.Health <= 0 then continue end
-            local part
-            if priority == "Head" then
-                part = ch:FindFirstChild("Head") or ch:FindFirstChild("HumanoidRootPart")
-            elseif priority == "Body" then
-                part = ch:FindFirstChild("HumanoidRootPart")
-            else
-                local best, bd = nil, math.huge
-                for _, p in ipairs(ch:GetChildren()) do
-                    if p:IsA("BasePart") then
-                        local d = (cam.CFrame.Position - p.Position).Magnitude
-                        if d < bd then bd = d; best = p end
-                    end
-                end
-                part = best
-            end
+            local part = ch:FindFirstChild("Head") or ch:FindFirstChild("HumanoidRootPart")
             if not part then continue end
             local d = (cam.CFrame.Position - part.Position).Magnitude
             if d < bestDist then bestDist = d; bestPart = part end
@@ -6174,7 +6148,22 @@ local function initialize(Library)
         return bestPart
     end
 
-    -- Backstab attack: CFrame.lookAt đứng sau địch (từ ragebot_4__1_.txt dòng 143)
+    -- Force shoot dùng api:force_shoot (từ docs)
+    local function doForceShoot(targetPart)
+        local ch2 = LocalPlayer.Character
+        if not ch2 then return end
+        local tool = ch2:FindFirstChildOfClass("Tool")
+        if not tool then return end
+        local handle = tool:FindFirstChild("Handle")
+        if not handle then return end
+        local hrp2 = ch2:FindFirstChild("HumanoidRootPart")
+        if not hrp2 then return end
+        pcall(function()
+            api:force_shoot(handle, targetPart, hrp2.Position, targetPart.Position, false)
+        end)
+    end
+
+    -- Ragebot attack: tele sau địch + force_shoot
     local function doRageAttack()
         local ch2 = LocalPlayer.Character
         if not ch2 then return end
@@ -6182,20 +6171,33 @@ local function initialize(Library)
         if not myHRP then return end
         local targetPart = getTarget()
         if not targetPart then return end
-        -- Đứng sau địch 4 studs, nhìn thẳng vào địch
+
+        -- Dùng api:teleport (từ docs) để tele sau địch
         local behindPos = targetPart.Position - targetPart.CFrame.LookVector * 4
-        myHRP.CFrame = CFrame.lookAt(behindPos, targetPart.Position)
+        pcall(function()
+            api:teleport(CFrame.lookAt(behindPos, targetPart.Position))
+        end)
+
+        -- Set silent aim target
         State.manipulation.targetPosition = targetPart.Position
+
+        -- Force shoot
+        doForceShoot(targetPart)
     end
 
     local function startRageLoop()
         if rageLoopRunning then return end
         rageLoopRunning = true
+        -- Dùng api:set_ragebot để bật ragebot của UE
+        pcall(function() api:set_ragebot(true) end)
+
         task.spawn(function()
             while rageActive do
                 pcall(doRageAttack)
                 local attackDelay = Options.ragebot_attack_delay and Options.ragebot_attack_delay.Value or 0.05
                 task.wait(attackDelay)
+
+                -- Void sau mỗi attack
                 if Toggles.ragebot_void_spam and Toggles.ragebot_void_spam.Value then
                     voidActive = true
                     startVoidSpam()
@@ -6206,9 +6208,11 @@ local function initialize(Library)
                 else
                     task.wait(0.05)
                 end
+
                 if not rageActive then break end
             end
             rageLoopRunning = false
+            pcall(function() api:set_ragebot(false) end)
         end)
     end
 
@@ -6224,7 +6228,9 @@ local function initialize(Library)
                 local myHRP = ch3 and ch3:FindFirstChild("HumanoidRootPart")
                 if not myHRP then return end
                 local behind = targetPart.Position - targetPart.CFrame.LookVector * 4
-                myHRP.CFrame = CFrame.lookAt(behind, targetPart.Position)
+                pcall(function()
+                    api:teleport(CFrame.lookAt(behind, targetPart.Position))
+                end)
             end)
         end)
     end
@@ -6235,6 +6241,12 @@ local function initialize(Library)
         firerateConn = RunService.Heartbeat:Connect(function()
             pcall(function()
                 local mult = Options.ragebot_firerate and Options.ragebot_firerate.Value or 10
+                -- Dùng tool cache của UE API
+                local ok, cache = pcall(function() return api:get_tool_cache() end)
+                if ok and cache then
+                    -- cache.gun = true nếu đang cầm gun
+                    -- Patch firerate qua localFighter fallback
+                end
                 if localFighter and localFighter.EquippedItem then
                     local w = localFighter.EquippedItem
                     if w.Info then w.Info.Firerate = math.max(0.01, 0.5 / (mult / 10)) end
@@ -6252,6 +6264,7 @@ local function initialize(Library)
             else
                 rageActive = false
                 stopVoidSpam()
+                pcall(function() api:set_ragebot(false) end)
                 if firerateConn then firerateConn:Disconnect(); firerateConn = nil end
             end
         end)
@@ -6268,6 +6281,17 @@ local function initialize(Library)
             end
         end)
     end
+
+    -- Silent aim target update dùng api:get_target_cache
+    RunService.Heartbeat:Connect(function()
+        if not (Toggles.aimbot_toggle and Toggles.aimbot_toggle.Value) then return end
+        pcall(function()
+            local cache = api:get_target_cache("silent")
+            if cache and cache.part then
+                State.manipulation.targetPosition = cache.part.Position
+            end
+        end)
+    end)
 
 
     SaveManager:LoadAutoloadConfig()
