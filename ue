@@ -5807,10 +5807,36 @@ local function initialize(Library)
         end
     end)
 
+    -- Setup DebugController cho triggerbot
+    local DebugController = nil
+    pcall(function()
+        local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts", 5)
+        local Controllers   = PlayerScripts and PlayerScripts:FindFirstChild("Controllers")
+        if Controllers then
+            DebugController = require(Controllers:WaitForChild("DebugController", 5))
+        end
+    end)
+
     local triggerConn = nil
     Toggles.triggerbot_enabled:OnChanged(function()
         if triggerConn then triggerConn:Disconnect(); triggerConn = nil end
-        if not Toggles.triggerbot_enabled.Value then return end
+
+        if not Toggles.triggerbot_enabled.Value then
+            -- Tắt handicap khi tắt triggerbot
+            pcall(function()
+                if DebugController then
+                    DebugController:SetHandicapsEnabled(false)
+                end
+            end)
+            return
+        end
+
+        -- Bật handicap để triggerbot hoạt động
+        pcall(function()
+            if DebugController then
+                DebugController:SetHandicapsEnabled(true)
+            end
+        end)
 
         triggerConn = RunService.Heartbeat:Connect(function()
             local mouseTarget = LocalPlayer:GetMouse().Target
@@ -5822,25 +5848,33 @@ local function initialize(Library)
             local player = Players:GetPlayerFromCharacter(model)
             if not player or player == LocalPlayer then return end
 
+            -- Dùng force_shoot nếu có UE API
+            local shot = false
             pcall(function()
-                if localFighter and localFighter.EquippedItem then
-                    local eq = localFighter.EquippedItem
-                    if eq.shoot then eq:shoot()
-                    elseif eq.Fire then eq:Fire()
-                    elseif eq.Attack then eq:Attack()
-                    end
-                else
-                    -- Dùng Tool trong character thay vì getgc
-                    local char = LocalPlayer.Character
-                    if char then
-                        local tool = char:FindFirstChildOfClass("Tool")
-                        if tool then
-                            local fire = tool:FindFirstChild("Fire") or tool:FindFirstChild("shoot")
-                            if fire then pcall(function() fire:Invoke() end) end
+                local ch2 = LocalPlayer.Character
+                if not ch2 then return end
+                local tool = ch2:FindFirstChildOfClass("Tool")
+                if not tool then return end
+                local handle = tool:FindFirstChild("Handle")
+                if not handle then return end
+                local hrp2 = ch2:FindFirstChild("HumanoidRootPart")
+                if not hrp2 then return end
+                api:force_shoot(handle, mouseTarget, hrp2.Position, mouseTarget.Position, false)
+                shot = true
+            end)
+
+            if not shot then
+                -- Fallback: localFighter
+                pcall(function()
+                    if localFighter and localFighter.EquippedItem then
+                        local eq = localFighter.EquippedItem
+                        if eq.shoot then eq:shoot()
+                        elseif eq.Fire then eq:Fire()
+                        elseif eq.Attack then eq:Attack()
                         end
                     end
-                end
-            end)
+                end)
+            end
         end)
     end)
 
@@ -6072,36 +6106,77 @@ local function initialize(Library)
 
 
     -- ================================================================
-    -- VOID SPAM dùng api:set_fake + api:set_desync_cframe (UE API)
+    -- VOID SPAM (void_spam.lua — betterRandom + BindToRenderStep)
     -- ================================================================
-    local voidActive = false
+    local voidActive   = false
+    local voidHrp      = nil
+    local voidClientC  = nil
+    local voidClientV  = nil
+    local voidClientVA = nil
+    local voidHB       = nil
+
+    local function betterRandom(mi, ma, dmi, dma)
+        local val = math.random(mi, ma)
+        repeat val = math.random(mi, ma)
+        until val < dmi or val > dma
+        return val
+    end
 
     local function startVoidSpam()
         if not voidActive then return end
-        -- Dùng api:set_fake để tạo fake position (server thấy ở chỗ khác)
-        pcall(function()
-            api:set_fake(true)
-        end)
-        -- Dùng api:add_desync_callback để spam vị trí random mỗi frame
-        pcall(function()
-            api:add_desync_callback(10, function()
-                if not voidActive then return nil end
-                local char2 = LocalPlayer.Character
-                local hrp2  = char2 and char2:FindFirstChild("HumanoidRootPart")
-                if not hrp2 then return nil end
-                local pos = hrp2.Position
-                return CFrame.new(
-                    pos.X + (-1489021035.808403),
-                    pos.Y,
-                    pos.Z + 1547417969.8282743
+        local char2 = LocalPlayer.Character
+        if not char2 then return end
+        voidHrp = char2:FindFirstChild("HumanoidRootPart")
+        if not voidHrp then return end
+
+        -- Heartbeat: spam HRP đến tọa độ random cực xa
+        voidHB = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                if not voidActive then return end
+                local hrp2 = voidHrp
+                if not hrp2 or not hrp2.Parent then return end
+                voidClientC  = hrp2.CFrame
+                voidClientV  = hrp2.AssemblyLinearVelocity
+                voidClientVA = hrp2.AssemblyAngularVelocity
+                hrp2.CFrame = CFrame.new(
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
+                ) * CFrame.Angles(math.rad(math.pi), math.rad(math.pi), math.rad(math.pi))
+                hrp2.AssemblyLinearVelocity = Vector3.new(
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
+                )
+                hrp2.AssemblyAngularVelocity = Vector3.new(
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
+                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
                 )
             end)
+        end)
+
+        -- BindToRenderStep First: restore về vị trí client ngay trước render
+        RunService:BindToRenderStep("ue_void_sync", Enum.RenderPriority.First.Value, function()
+            if not voidActive then
+                RunService:UnbindFromRenderStep("ue_void_sync")
+                return
+            end
+            if voidHrp and voidClientC then
+                pcall(function()
+                    voidHrp.CFrame                  = voidClientC
+                    voidHrp.AssemblyLinearVelocity  = voidClientV
+                    voidHrp.AssemblyAngularVelocity = voidClientVA
+                end)
+            end
         end)
     end
 
     local function stopVoidSpam()
         voidActive = false
-        pcall(function() api:set_fake(false) end)
+        if voidHB then voidHB:Disconnect(); voidHB = nil end
+        pcall(function() RunService:UnbindFromRenderStep("ue_void_sync") end)
+        voidHrp = nil; voidClientC = nil
     end
 
     -- ================================================================
