@@ -5006,6 +5006,7 @@ local function initialize(Library)
     local CombatTab = Window:AddTab("Combat")
     local VisualsTab = Window:AddTab("Visuals")
     local WorldTab = Window:AddTab("World")
+    local CharacterTab = Window:AddTab("Character")
     local MiscTab = Window:AddTab("Misc")
     local SettingsTab = Window:AddTab("Settings")
 
