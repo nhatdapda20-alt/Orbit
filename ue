@@ -5052,8 +5052,21 @@ local function initialize(Library)
 
     local AntiAimGroupbox = CombatTab:AddRightGroupbox("Anti Aim")
     AntiAimGroupbox:AddToggle("anti_aim_enabled", { Text = "enabled", Default = false })
+    AntiAimGroupbox:AddDropdown("anti_aim_pitch_mode", { Text = "pitch mode", Values = {"none", "flip", "up", "down", "custom"}, Default = "none" })
     AntiAimGroupbox:AddSlider("anti_aim_custom_yaw", { Text = "yaw angle", Min = -180, Max = 180, Default = 0, Rounding = 0 })
-    AntiAimGroupbox:AddDropdown("anti_aim_pitch_mode", { Text = "pitch mode", Values = {"none", "look down", "custom", "offset"}, Default = "none" })
+    AntiAimGroupbox:AddSlider("anti_aim_yaw_range", { Text = "yaw range", Min = 0, Max = 360, Default = 45, Rounding = 0, Suffix = "°" })
+    AntiAimGroupbox:AddDropdown("anti_aim_yaw_mode", { Text = "yaw mode", Values = {"none", "jitter", "sway", "inverter", "spin"}, Default = "none" })
+    AntiAimGroupbox:AddSlider("anti_aim_speed", { Text = "aa speed", Min = 1, Max = 30, Default = 15, Rounding = 0 })
+
+    -- Void Hide UI
+    local VoidGroupbox = CharacterTab:AddRightGroupbox("Void Hide")
+    VoidGroupbox:AddToggle("void_enabled", { Text = "enabled", Default = false })
+        :AddKeyPicker("void_keybind", { Default = "None", Mode = "Toggle", Text = "void" })
+    VoidGroupbox:AddSlider("void_distance", { Text = "distance", Min = 1, Max = 100, Default = 100, Rounding = 0, Suffix = "%" })
+    VoidGroupbox:AddSlider("void_height_offset", { Text = "height offset", Min = -1000, Max = 1000, Default = 0, Rounding = 0 })
+    VoidGroupbox:AddDropdown("void_mode", { Text = "motion mode", Values = {"none", "spin", "orbit", "random", "desync"}, Default = "none" })
+    VoidGroupbox:AddSlider("void_spin_speed", { Text = "spin speed", Min = 0, Max = 100, Default = 10, Rounding = 1 })
+    VoidGroupbox:AddSlider("void_orbit_radius", { Text = "orbit radius", Min = 1, Max = 200, Default = 25, Rounding = 0 })
 
     local ESPGroupbox = VisualsTab:AddLeftGroupbox("ESP")
     ESPGroupbox:AddToggle("esp_name", { Text = "name", Default = false })
@@ -6106,66 +6119,71 @@ local function initialize(Library)
 
 
     -- ================================================================
-    -- VOID SPAM (dùng api:set_fake từ UE docs)
     -- ================================================================
-    local voidActive = false
-    local voidHB     = nil
+    -- VOID HIDE (Astral) + ANTI-AIM (Astral)
+    -- ================================================================
+    local voidActive   = false
+    local voidHB       = nil
+    local voidOrigCF   = nil
+    local voidSpinAng  = 0
+    local aaJitterAng  = 0
 
-    local function betterRandom(mi, ma, dmi, dma)
-        local val = math.random(mi, ma)
-        repeat val = math.random(mi, ma)
-        until val < dmi or val > dma
-        return val
+    local function getVoidPos()
+        local dist = (Options.void_distance and Options.void_distance.Value or 100) * 25000
+        local hoff = Options.void_height_offset and Options.void_height_offset.Value or 0
+        local mode = Options.void_mode and Options.void_mode.Value or "none"
+        local d    = dist + hoff
+        if mode == "random" then
+            local r = Options.void_orbit_radius and Options.void_orbit_radius.Value or 25
+            return Vector3.new(math.random(-r,r), d, math.random(-r,r))
+        elseif mode == "orbit" then
+            local r = Options.void_orbit_radius and Options.void_orbit_radius.Value or 25
+            local a = voidSpinAng
+            return Vector3.new(math.cos(a)*r, d, math.sin(a)*r)
+        else
+            return Vector3.new(0, d, 0)
+        end
+    end
+
+    local function applyVoidMotion(dt)
+        local spd  = Options.void_spin_speed and Options.void_spin_speed.Value or 10
+        local mode = Options.void_mode and Options.void_mode.Value or "none"
+        voidSpinAng = voidSpinAng + (spd * dt)
+        local char2 = LocalPlayer.Character
+        local hrp   = char2 and char2:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if mode == "spin" then
+            hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, voidSpinAng, 0)
+        elseif mode == "desync" then
+            local dist = (Options.void_distance and Options.void_distance.Value or 100) * 25000
+            local hoff = Options.void_height_offset and Options.void_height_offset.Value or 0
+            local d    = dist + hoff
+            local x    = math.sin(voidSpinAng * 50) * 10
+            local z    = math.cos(voidSpinAng * 50) * 10
+            hrp.CFrame = CFrame.new(Vector3.new(x, d, z))
+                * CFrame.Angles(math.sin(voidSpinAng)*0.5, math.cos(voidSpinAng)*0.5, 0)
+        end
     end
 
     local function startVoidSpam()
-        -- Stop cũ trước
         if voidHB then voidHB:Disconnect(); voidHB = nil end
         pcall(function() RunService:UnbindFromRenderStep("ue_void_sync") end)
-
         local char2 = LocalPlayer.Character
-        if not char2 then return end
-        local hrp = char2:FindFirstChild("HumanoidRootPart")
+        local hrp   = char2 and char2:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
+        voidOrigCF  = hrp.CFrame
+        -- Tele lên void ngay
+        hrp.CFrame  = CFrame.new(getVoidPos())
 
-        local clientC  = hrp.CFrame
-        local clientV  = hrp.AssemblyLinearVelocity
-        local clientVA = hrp.AssemblyAngularVelocity
-
-        -- Dùng api:set_fake để desync position (UE API)
-        pcall(function()
-            api:set_fake(true, clientC, true)
-        end)
-
-        -- Heartbeat: spam server position cực xa
-        voidHB = RunService.Heartbeat:Connect(function()
+        -- Heartbeat: giữ ở void + motion
+        voidHB = RunService.Heartbeat:Connect(function(dt)
             pcall(function()
                 if not voidActive then return end
-                -- Cập nhật client position liên tục
-                clientC  = hrp.CFrame
-                clientV  = hrp.AssemblyLinearVelocity
-                clientVA = hrp.AssemblyAngularVelocity
-
-                -- Spam server qua set_desync_cframe (UE API)
-                api:set_desync_cframe(CFrame.new(
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646),
-                    betterRandom(-2147483646, 2147483646, -1147483646, 1147483646)
-                ))
-            end)
-        end)
-
-        -- RenderStepped First: restore client visual
-        RunService:BindToRenderStep("ue_void_sync", Enum.RenderPriority.First.Value, function()
-            if not voidActive then
-                RunService:UnbindFromRenderStep("ue_void_sync")
-                pcall(function() api:set_fake(false) end)
-                return
-            end
-            pcall(function()
-                hrp.CFrame                  = clientC
-                hrp.AssemblyLinearVelocity  = clientV
-                hrp.AssemblyAngularVelocity = clientVA
+                local c2 = LocalPlayer.Character
+                local h2 = c2 and c2:FindFirstChild("HumanoidRootPart")
+                if not h2 then return end
+                h2.CFrame = CFrame.new(getVoidPos())
+                applyVoidMotion(dt)
             end)
         end)
     end
@@ -6174,8 +6192,64 @@ local function initialize(Library)
         voidActive = false
         if voidHB then voidHB:Disconnect(); voidHB = nil end
         pcall(function() RunService:UnbindFromRenderStep("ue_void_sync") end)
-        pcall(function() api:set_fake(false) end)
+        pcall(function()
+            local char2 = LocalPlayer.Character
+            local hrp   = char2 and char2:FindFirstChild("HumanoidRootPart")
+            if hrp and voidOrigCF then hrp.CFrame = voidOrigCF end
+        end)
     end
+
+    -- Void toggle OnChanged
+    if Toggles.void_enabled then
+        Toggles.void_enabled:OnChanged(function()
+            if Toggles.void_enabled.Value then
+                voidActive = true
+                startVoidSpam()
+            else
+                stopVoidSpam()
+            end
+        end)
+    end
+
+    -- ================================================================
+    -- ANTI-AIM (Astral: Jitter/Sway/Inverter/Spin + Pitch)
+    -- ================================================================
+    RunService.Heartbeat:Connect(function(dt)
+        pcall(function()
+            if not (Toggles.anti_aim_enabled and Toggles.anti_aim_enabled.Value) then return end
+            local char2 = LocalPlayer.Character
+            local hrp   = char2 and char2:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+
+            voidSpinAng = voidSpinAng + dt
+            local spd      = Options.anti_aim_speed and Options.anti_aim_speed.Value or 15
+            local yawRange = Options.anti_aim_yaw_range and Options.anti_aim_yaw_range.Value or 45
+            local pitchMode= Options.anti_aim_pitch_mode and Options.anti_aim_pitch_mode.Value or "none"
+            local yawMode  = Options.anti_aim_yaw_mode and Options.anti_aim_yaw_mode.Value or "none"
+
+            local pitch = 0
+            if     pitchMode == "flip" then pitch = math.rad(180)
+            elseif pitchMode == "up"   then pitch = math.rad(-90)
+            elseif pitchMode == "down" then pitch = math.rad(90)
+            elseif pitchMode == "custom" then
+                pitch = math.rad(Options.anti_aim_custom_yaw and Options.anti_aim_custom_yaw.Value or 0)
+            end
+
+            local yaw = Options.anti_aim_custom_yaw and math.rad(Options.anti_aim_custom_yaw.Value) or 0
+            if yawMode == "jitter" then
+                aaJitterAng = (aaJitterAng + spd * dt * 10) % (yawRange * 2)
+                yaw = math.rad(aaJitterAng - yawRange)
+            elseif yawMode == "sway" then
+                yaw = math.sin(voidSpinAng * (spd/5)) * math.rad(yawRange)
+            elseif yawMode == "inverter" then
+                yaw = (math.floor(voidSpinAng*2) % 2 == 0) and 0 or math.rad(180)
+            elseif yawMode == "spin" then
+                yaw = voidSpinAng * spd
+            end
+
+            hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(pitch, yaw, 0)
+        end)
+    end)
 
     -- ================================================================
     -- RAGEBOT dùng UE API (api:set_ragebot, api:force_shoot, api:get_target_cache)
@@ -6236,7 +6310,7 @@ local function initialize(Library)
         end)
     end
 
-    -- Ragebot attack: desync sau địch + force_shoot
+    -- Ragebot attack: tele sau địch + force_shoot
     local function doRageAttack()
         local ch2 = LocalPlayer.Character
         if not ch2 then return end
@@ -6245,17 +6319,16 @@ local function initialize(Library)
         local targetPart = getTarget()
         if not targetPart then return end
 
-        -- Tele server-side sau lưng địch dùng set_desync_cframe
-        local behindPos = targetPart.Position - targetPart.CFrame.LookVector * 3
-        local attackCF = CFrame.lookAt(behindPos, targetPart.Position)
+        -- Dùng api:teleport (từ docs) để tele sau địch
+        local behindPos = targetPart.Position - targetPart.CFrame.LookVector * 4
         pcall(function()
-            api:set_desync_cframe(attackCF)
+            api:teleport(CFrame.lookAt(behindPos, targetPart.Position))
         end)
 
         -- Set silent aim target
         State.manipulation.targetPosition = targetPart.Position
 
-        -- Force shoot từ vị trí desync
+        -- Force shoot
         doForceShoot(targetPart)
     end
 
@@ -6276,11 +6349,11 @@ local function initialize(Library)
                     voidActive = true
                     startVoidSpam()
                     local hideTime = Options.ragebot_void_spam_hide and Options.ragebot_void_spam_hide.Value or 0.07
-                    task.wait(math.max(0.01, hideTime))
+                    task.wait(hideTime)
                     stopVoidSpam()
-                    task.wait(0.03)
+                    task.wait(0.05)
                 else
-                    task.wait(0.03)
+                    task.wait(0.05)
                 end
 
                 if not rageActive then break end
@@ -6301,9 +6374,10 @@ local function initialize(Library)
                 local ch3 = LocalPlayer.Character
                 local myHRP = ch3 and ch3:FindFirstChild("HumanoidRootPart")
                 if not myHRP then return end
-                local behind = targetPart.Position - targetPart.CFrame.LookVector * 3
-                -- Dùng desync để backstab (server thấy sau lưng địch)
-                api:set_desync_cframe(CFrame.lookAt(behind, targetPart.Position))
+                local behind = targetPart.Position - targetPart.CFrame.LookVector * 4
+                pcall(function()
+                    api:teleport(CFrame.lookAt(behind, targetPart.Position))
+                end)
             end)
         end)
     end
@@ -6355,39 +6429,13 @@ local function initialize(Library)
         end)
     end
 
-    -- Silent aim: dùng api:force_shoot kết hợp với target cache
+    -- Silent aim target update dùng api:get_target_cache
     RunService.Heartbeat:Connect(function()
+        if not (Toggles.aimbot_toggle and Toggles.aimbot_toggle.Value) then return end
         pcall(function()
-            -- Update target position cho silent aim hook
-            if Toggles.aimbot_toggle and Toggles.aimbot_toggle.Value then
-                local cache = api:get_target_cache("silent")
-                if cache and cache.part then
-                    State.manipulation.targetPosition = cache.part.Position
-                end
-            end
-
-            -- Silent force shoot nếu đang bắn và có target
-            if Toggles.silent_manipulation and Toggles.silent_manipulation.Value then
-                local ch3 = LocalPlayer.Character
-                if not ch3 then return end
-                local tool = ch3:FindFirstChildOfClass("Tool")
-                if not tool then return end
-                local handle = tool:FindFirstChild("Handle")
-                if not handle then return end
-                local myHRP = ch3:FindFirstChild("HumanoidRootPart")
-                if not myHRP then return end
-
-                local cache = api:get_target_cache("silent")
-                if cache and cache.part then
-                    local dist = (myHRP.Position - cache.part.Position).Magnitude
-                    if dist <= 200 then
-                        -- hitchance check
-                        local hc = Options.silent_hitchance and Options.silent_hitchance.Value or 100
-                        if math.random(1, 100) <= hc then
-                            api:force_shoot(handle, cache.part, myHRP.Position, cache.part.Position, false)
-                        end
-                    end
-                end
+            local cache = api:get_target_cache("silent")
+            if cache and cache.part then
+                State.manipulation.targetPosition = cache.part.Position
             end
         end)
     end)
